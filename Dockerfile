@@ -17,6 +17,9 @@ RUN npm prune --omit=dev
 
 FROM node:20-alpine AS runner
 WORKDIR /app
+# drawio-skill scripts (importers / autolayout / restyle / c4) need python3;
+# autolayout needs Graphviz dot
+RUN apk add --no-cache python3 graphviz
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=6001

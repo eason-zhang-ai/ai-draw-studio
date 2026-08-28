@@ -8,6 +8,43 @@ const execFileAsync = promisify(execFile);
 
 export const maxDuration = 60;
 
+const slug = (s: string) =>
+    String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+
+/**
+ * c4.py rejects duplicate element ids across levels; models occasionally
+ * reuse an id (e.g. "customer") in every level. Rename later duplicates to
+ * level-scoped ids and rewrite that level's relation references.
+ */
+function dedupeLevels(levels: any[]) {
+    const seen = new Set<string>();
+    for (const lv of levels) {
+        const renames = new Map<string, string>();
+        for (const el of lv.elements || []) {
+            let id = String(el.id ?? "");
+            if (!id) {
+                id = `el-${Math.random().toString(36).slice(2, 8)}`;
+                el.id = id;
+            }
+            if (seen.has(id)) {
+                let unique = `${slug(lv.name || "level")}-${id}`;
+                let n = 2;
+                while (seen.has(unique)) {
+                    unique = `${slug(lv.name || "level")}-${id}-${n++}`;
+                }
+                renames.set(id, unique);
+                el.id = unique;
+            }
+            seen.add(el.id);
+        }
+        for (const rel of lv.relations || []) {
+            if (renames.has(rel.from)) rel.from = renames.get(rel.from);
+            if (renames.has(rel.to)) rel.to = renames.get(rel.to);
+        }
+    }
+    return levels;
+}
+
 /**
  * C4 model generator (drawio-skill c4.py): levels JSON in -> multi-page
  * .drawio with click-to-drill-down links between System Context / Container /
@@ -16,8 +53,8 @@ export const maxDuration = 60;
 export async function POST(req: Request) {
     try {
         const { c4 } = await req.json();
-        const levels = c4?.levels;
-        if (!Array.isArray(levels) || levels.length === 0) {
+        const levels = dedupeLevels(c4?.levels || []);
+        if (levels.length === 0) {
             return Response.json(
                 { error: "c4.levels 不能为空" },
                 { status: 400 }
