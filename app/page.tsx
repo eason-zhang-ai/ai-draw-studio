@@ -52,6 +52,34 @@ export default function Home() {
         }
     };
 
+    const applyStylePreset = async (preset: string) => {
+        if (layoutBusy) return;
+        setLayoutBusy(true);
+        setLayoutNotice(null);
+        try {
+            const xml = await exportXml();
+            const res = await fetch("/api/restyle", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ xml, preset }),
+            });
+            const data = await res.json();
+            if (res.ok && data.xml) {
+                loadDiagram(data.xml);
+                setLayoutNotice(`✅ 已应用「${preset}」样式（布局不变）`);
+            } else {
+                setLayoutNotice(`样式应用失败：${data?.error || res.status}`);
+            }
+        } catch (error) {
+            setLayoutNotice(
+                `样式应用失败：${error instanceof Error ? error.message : String(error)}`
+            );
+        } finally {
+            setLayoutBusy(false);
+            setTimeout(() => setLayoutNotice(null), 6000);
+        }
+    };
+
     useEffect(() => {
         const checkMobile = () => {
             setIsMobile(window.innerWidth < 768);
@@ -159,6 +187,28 @@ export default function Home() {
                     {/* Import/Export buttons overlayed on top of Draw.io, positioned to look like part of the toolbar */}
                     {isDrawIoLoaded && (
                         <div className="absolute top-2.5 right-20 z-10 flex gap-2 animate-in fade-in duration-300">
+                            <select
+                                className="h-7.5 rounded-[4px] border border-[#b8d4e8] bg-[#c2e7ff] px-1.5 text-[#3F3F3F] shadow-sm hover:bg-[#abcfe7]/90"
+                                style={{ fontSize: "14px", fontWeight: 550 }}
+                                title="应用样式预设（暗色/企业/手绘/色盲安全）"
+                                defaultValue=""
+                                disabled={layoutBusy}
+                                onChange={(e) => {
+                                    if (e.target.value) {
+                                        applyStylePreset(e.target.value);
+                                        e.target.value = "";
+                                    }
+                                }}
+                            >
+                                <option value="" disabled>
+                                    样式
+                                </option>
+                                <option value="default">默认</option>
+                                <option value="corporate">企业风</option>
+                                <option value="handdrawn">手绘风</option>
+                                <option value="colorblind-safe">色盲安全</option>
+                                <option value="dark">暗色</option>
+                            </select>
                             <Button 
                                 onClick={runAutoLayout} 
                                 variant="secondary" 

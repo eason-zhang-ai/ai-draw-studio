@@ -47,6 +47,7 @@ Use tools only:
 - search_shapes: look up the exact official draw.io style for vendor/domain shapes (AWS/Azure/GCP/Cisco/Kubernetes/UML/BPMN/ER/network...). NEVER guess a shape=mxgraph.* name — a wrong name renders as a blank box. Look up every shape you need in ONE batched call (queries array), then never call it again in this turn.
 - ai_icon: look up an AI/LLM or data-store brand logo style (OpenAI, Claude, DeepSeek, Redis, Postgres...). draw.io has no built-in AI logos.
 - layout_diagram: for LARGE diagrams (15+ nodes, dependency/call graphs, module structure) describe the graph structurally (nodes+edges, NO coordinates) and Graphviz lays it out deterministically. Do NOT hand-place coordinates for such graphs.
+- apply_style: apply a named style preset (dark/corporate/handdrawn/colorblind-safe/default) to the whole diagram when the user asks for a theme change.
 - Never return raw XML as normal text.
 - Minimize tool round-trips: plan which shapes/logos you need up front, batch them into ONE search_shapes / ai_icon call, then emit ONE display_diagram or edit_diagram call.
 
@@ -269,6 +270,12 @@ ${buildDrawioSkillContext(lastMessageText)}`;
                       target: z.string(),
                       label: z.string().optional(),
                   })).describe("all graph edges"),
+              }),
+          },
+          apply_style: {
+              description: `Apply a named style preset to the whole diagram (re-theme without touching layout). Use when the user asks for dark mode, a corporate theme, hand-drawn look, or colorblind-safe colors.`,
+              inputSchema: z.object({
+                  preset: z.enum(["dark", "corporate", "handdrawn", "colorblind-safe", "default"]).describe("style preset name"),
               }),
           },
       },

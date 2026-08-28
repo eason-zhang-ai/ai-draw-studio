@@ -283,6 +283,38 @@ export default function ChatPanel() {
                             output: `自动布局失败：${error instanceof Error ? error.message : String(error)}`,
                         });
                     }
+                } else if (toolCall.toolName === "apply_style") {
+                    const preset = (toolCall.input as { preset?: string })
+                        ?.preset;
+                    try {
+                        const xml = await onFetchChart();
+                        const res = await fetch("/api/restyle", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ xml, preset }),
+                        });
+                        const data = await res.json();
+                        if (res.ok && data.xml) {
+                            onDisplayChart(data.xml);
+                            addToolResult({
+                                tool: "apply_style",
+                                toolCallId: toolCall.toolCallId,
+                                output: `已应用 "${preset}" 样式预设（布局不变）。`,
+                            });
+                        } else {
+                            addToolResult({
+                                tool: "apply_style",
+                                toolCallId: toolCall.toolCallId,
+                                output: `样式应用失败：${data?.error || res.status}`,
+                            });
+                        }
+                    } catch (error) {
+                        addToolResult({
+                            tool: "apply_style",
+                            toolCallId: toolCall.toolCallId,
+                            output: `样式应用失败：${error instanceof Error ? error.message : String(error)}`,
+                        });
+                    }
                 } else if (toolCall.toolName === "edit_diagram") {
                     const { edits } = toolCall.input as {
                         edits: Array<{ search: string; replace: string }>;
