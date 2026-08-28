@@ -10,8 +10,10 @@ import { searchShapesBatch, searchAiIcons } from "@/lib/shape-search";
 
 export const maxDuration = 90
 const MAX_CONTEXT_MESSAGES = 3;
-const DEFAULT_MAX_OUTPUT_TOKENS = 32000;
-const MAX_OUTPUT_TOKENS = 64000;
+// 16k bounds worst-case cost/latency when a reasoning model degenerates into
+// a long thinking loop; diagrams rarely need more than this.
+const DEFAULT_MAX_OUTPUT_TOKENS = 16000;
+const MAX_OUTPUT_TOKENS = 32000;
 const MAX_XML_CONTEXT_CHARS = 4000;
 
 function clampMaxOutputTokens(value?: number) {
@@ -165,7 +167,8 @@ ${buildDrawioSkillContext(lastMessageText)}`;
       model: client.chat(model),
       messages: enhancedMessages,
       maxOutputTokens: effectiveMaxOutputTokens,
-      maxRetries: 1,
+      // No retries: a degenerate reasoning loop would just run twice.
+      maxRetries: 0,
       onChunk: () => {
         if (!firstChunkLogged) {
           firstChunkLogged = true;

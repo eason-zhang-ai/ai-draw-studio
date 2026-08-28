@@ -123,7 +123,7 @@ const SHAPESEARCH_PYTHON_HINT =
  * - sections of diagram-types.md matched by the user's request keywords;
  * - the hand-writable style cheat sheet from shapes.md, if budget allows.
  */
-export function buildDrawioSkillContext(userText: string, budget = 12000): string {
+export function buildDrawioSkillContext(userText: string, budget = 18000): string {
     const parts: string[] = [];
 
     let xmlAuthoring = loadReference("xml-authoring.md") || "";
@@ -167,10 +167,11 @@ export function buildDrawioSkillContext(userText: string, budget = 12000): strin
     }
 
     // Budget-trim: keep parts in priority order while under the byte budget.
+    // The first part is always kept (even if it alone exceeds the budget).
     const kept: string[] = [];
     let used = 0;
     for (const part of parts) {
-        if (used + part.length > budget) break;
+        if (used > 0 && used + part.length > budget) break;
         kept.push(part);
         used += part.length;
     }
