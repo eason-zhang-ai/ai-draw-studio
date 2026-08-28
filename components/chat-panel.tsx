@@ -334,24 +334,10 @@ export default function ChatPanel() {
         e.preventDefault();
         if (input.trim() && status !== "submitted" && status !== "streaming") {
             try {
-                // Fetch chart data before sending message
-                let chartXml = chartXML;
-                try {
-                    chartXml = await onFetchChart();
-                } catch (error) {
-                    if (!chartXml) {
-                        throw error;
-                    }
-                    console.warn("Using cached chart XML because live export failed", error);
-                }
-
-                // Format the XML to ensure consistency
-                chartXml = formatXML(chartXml);
-
                 // Import code/config files (SQL/Terraform/OpenAPI/Python/JS)
-                // through the deterministic importers BEFORE sending the
-                // prompt — the imported diagram lands on the canvas and the
-                // model sees it as the current-diagram context.
+                // through the deterministic importers BEFORE fetching the
+                // canvas XML — the imported diagram lands on the canvas and
+                // the model sees it as the current-diagram context.
                 const codeFiles = files.filter(
                     (f) => !f.type.startsWith("image/")
                 );
@@ -384,6 +370,21 @@ export default function ChatPanel() {
                         );
                     }
                 }
+
+                // Fetch chart data before sending message (after imports so
+                // the model context includes the imported diagram)
+                let chartXml = chartXML;
+                try {
+                    chartXml = await onFetchChart();
+                } catch (error) {
+                    if (!chartXml) {
+                        throw error;
+                    }
+                    console.warn("Using cached chart XML because live export failed", error);
+                }
+
+                // Format the XML to ensure consistency
+                chartXml = formatXML(chartXml);
 
                 // Create message parts
                 const textWithNotes =
