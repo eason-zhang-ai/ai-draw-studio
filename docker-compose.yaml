@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  ai-smart-draw:
+    image: ai-smart-draw
+    container_name: ai-smart-draw
+    ports:
+      - "6001:6001"
+    env_file:
+      - .env.local
+    restart: unless-stopped
