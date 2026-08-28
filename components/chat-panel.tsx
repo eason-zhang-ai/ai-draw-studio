@@ -1,5 +1,9 @@
 "use client";
 
+import {
+    Loader2,
+    ScanEye,
+} from "lucide-react";
 import type React from "react";
 import { useRef, useEffect, useState } from "react";
 import {
@@ -28,8 +32,112 @@ export default function ChatPanel() {
         chartXML,
         clearDiagram,
         diagramHistory,
+        exportPng,
     } = useDiagram();
     const { config: modelConfig } = useModelConfig();
+
+    // Vision self-check (drawio-skill Step 5): after each display_diagram,
+    // export a PNG, ask the vision model for layout issues, and apply
+    // targeted fixes (max 2 rounds).
+    const [selfCheckEnabled, setSelfCheckEnabled] = useState(() => {
+        if (typeof window === "undefined") return true;
+        return localStorage.getItem("self-check-enabled") !== "0";
+    });
+    const [selfCheckBusy, setSelfCheckBusy] = useState(false);
+    const selfCheckBusyRef = useRef(false);
+
+    const toggleSelfCheck = () => {
+        setSelfCheckEnabled((prev) => {
+            const next = !prev;
+            localStorage.setItem("self-check-enabled", next ? "1" : "0");
+            return next;
+        });
+    };
+
+    const appendNotice = (
+        setMessages: ReturnType<typeof useChat>["setMessages"],
+        text: string
+    ) => {
+        setMessages((prev) => [
+            ...prev,
+            {
+                id: `selfcheck-${Date.now()}`,
+                role: "assistant" as const,
+                parts: [{ type: "text" as const, text }],
+            },
+        ]);
+    };
+
+    const runSelfCheck = async (
+        setMessages: ReturnType<typeof useChat>["setMessages"],
+        currentXml: string
+    ) => {
+        if (selfCheckBusyRef.current) return;
+        selfCheckBusyRef.current = true;
+        setSelfCheckBusy(true);
+        let fixedCount = 0;
+        let xml = currentXml;
+        try {
+            for (let round = 0; round < 2; round++) {
+                const png = await exportPng();
+                const checkRes = await fetch("/api/selfcheck", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        dataUrl: png,
+                        xml,
+                        modelConfig,
+                    }),
+                });
+                const checkData = await checkRes.json();
+                const issues: unknown[] =
+                    checkRes.ok && Array.isArray(checkData.issues)
+                        ? checkData.issues
+                        : [];
+                if (issues.length === 0) {
+                    appendNotice(
+                        setMessages,
+                        fixedCount > 0
+                            ? `🔍 自检通过（已自动修复 ${fixedCount} 处）`
+                            : "🔍 自检通过：未发现布局问题"
+                    );
+                    return;
+                }
+                const fixRes = await fetch("/api/selfcheck-fix", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ xml, issues, modelConfig }),
+                });
+                const fixData = await fixRes.json();
+                const edits: { search: string; replace: string }[] =
+                    fixRes.ok && Array.isArray(fixData.edits)
+                        ? fixData.edits
+                        : [];
+                if (edits.length > 0) {
+                    const { replaceXMLParts } = await import("@/lib/utils");
+                    xml = replaceXMLParts(xml, edits);
+                    onDisplayChart(xml);
+                    fixedCount += edits.length;
+                } else {
+                    break;
+                }
+            }
+            appendNotice(
+                setMessages,
+                fixedCount > 0
+                    ? `🔧 已自动修复 ${fixedCount} 处问题，请在画布上复核`
+                    : "🔍 自检发现少量问题，建议手动微调"
+            );
+        } catch (error) {
+            appendNotice(
+                setMessages,
+                `⚠️ 自检失败：${error instanceof Error ? error.message : String(error)}`
+            );
+        } finally {
+            selfCheckBusyRef.current = false;
+            setSelfCheckBusy(false);
+        }
+    };
 
     const onFetchChart = (timeoutMs = 1500) => {
         return new Promise<string>((resolve, reject) => {
@@ -87,6 +195,14 @@ export default function ChatPanel() {
                         toolCallId: toolCall.toolCallId,
                         output: "生成完成.",
                     });
+                    // Auto self-check after the diagram lands on the canvas.
+                    if (selfCheckEnabled && modelConfig.visionModel) {
+                        setTimeout(() => {
+                            onFetchChart(3000)
+                                .then((xml) => runSelfCheck(setMessages, xml))
+                                .catch(() => {});
+                        }, 1500);
+                    }
                 } else if (toolCall.toolName === "edit_diagram") {
                     const { edits } = toolCall.input as {
                         edits: Array<{ search: string; replace: string }>;
@@ -211,6 +327,30 @@ export default function ChatPanel() {
                     <div className="flex gap-2 items-center">
                         <ModeSelector active="drawio" />
                     </div>
+                    <button
+                        type="button"
+                        onClick={toggleSelfCheck}
+                        disabled={selfCheckBusy || !modelConfig.visionModel}
+                        title={
+                            !modelConfig.visionModel
+                                ? "未配置视觉模型，无法自检"
+                                : selfCheckEnabled
+                                  ? "视觉自检已开启（生成后自动检查布局）"
+                                  : "视觉自检已关闭"
+                        }
+                        className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors ${
+                            selfCheckEnabled
+                                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700"
+                                : "border-border bg-muted/40 text-muted-foreground"
+                        }`}
+                    >
+                        {selfCheckBusy ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                            <ScanEye className="h-3.5 w-3.5" />
+                        )}
+                        视觉自检{selfCheckEnabled ? " · 开" : " · 关"}
+                    </button>
                 </div>
             </CardHeader>
             <CardContent className="flex-grow overflow-hidden px-2">

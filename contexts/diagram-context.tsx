@@ -17,6 +17,8 @@ interface DiagramContextType {
     importDiagramFile: (file: File) => void;
     exportDiagramFile: () => void;
     exportPurpose: 'chat' | 'file';
+    /** Export the current canvas as a PNG data URL (used by vision self-check). */
+    exportPng: () => Promise<string>;
 }
 
 const DiagramContext = createContext<DiagramContextType | undefined>(undefined);
@@ -30,6 +32,32 @@ export function DiagramProvider({ children }: { children: React.ReactNode }) {
     const [exportPurpose, setExportPurpose] = useState<'chat' | 'file'>('chat');
     const drawioRef = useRef<DrawIoEmbedRef | null>(null);
     const resolverRef = useRef<((value: string) => void) | null>(null);
+    const pngResolverRef = useRef<((value: string) => void) | null>(null);
+    const pngExportPending = useRef(false);
+
+    const exportPng = () => {
+        return new Promise<string>((resolve, reject) => {
+            if (!drawioRef.current) {
+                reject(new Error("drawio 编辑器尚未就绪"));
+                return;
+            }
+            let settled = false;
+            const timer = setTimeout(() => {
+                if (settled) return;
+                settled = true;
+                pngResolverRef.current = null;
+                reject(new Error("PNG 导出超时"));
+            }, 8000);
+            pngResolverRef.current = (value: string) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                resolve(value);
+            };
+            pngExportPending.current = true;
+            drawioRef.current.exportDiagram({ format: "png" });
+        });
+    };
 
     const handleExport = (purpose: 'chat' | 'file' = 'chat') => {
         // Store the purpose for the export handler
@@ -63,6 +91,22 @@ export function DiagramProvider({ children }: { children: React.ReactNode }) {
     };
 
     const handleDiagramExport = (data: any) => {
+        // PNG export for the vision self-check: resolve the pending promise
+        // with the raw data URL and leave chart state untouched.
+        if (pngExportPending.current) {
+            pngExportPending.current = false;
+            const resolver = pngResolverRef.current;
+            pngResolverRef.current = null;
+            if (resolver) {
+                resolver(
+                    typeof data?.data === "string"
+                        ? data.data
+                        : `data:image/png;base64,${data?.data || ""}`
+                );
+            }
+            return;
+        }
+
         const extractedXML = extractDiagramXML(data.data);
         
         // 只有在聊天导出时才更新状态，避免文件导出时干扰
@@ -127,6 +171,7 @@ export function DiagramProvider({ children }: { children: React.ReactNode }) {
                 importDiagramFile,
                 exportDiagramFile,
                 exportPurpose,
+                exportPng,
             }}
         >
             {children}
