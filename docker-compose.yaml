@@ -1,9 +1,10 @@
-version: '3.8'
-
 services:
-  ai-smart-draw:
-    image: ai-smart-draw
-    container_name: ai-smart-draw
+  ai-draw-studio:
+    image: ai-draw-studio:latest
+    build:
+      context: .
+    container_name: ai-draw-studio
+    pull_policy: never
     ports:
       - "6001:6001"
     env_file:
