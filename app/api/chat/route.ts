@@ -121,7 +121,7 @@ ${getProfessionalDiagramGuidelines(lastMessageText)}`;
         for (const imagePart of imageParts) {
           contentParts.push({
             type: 'image',
-            image: imagePart.url,
+            image: imagePart.image,
             mimeType: imagePart.mediaType
           });
         }
