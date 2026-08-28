@@ -25,7 +25,7 @@ const KIND_CONFIG: Record<
     javascript: { script: "jsimports.py", ext: ".js", args: ["--group"], label: "JS/TS → 模块依赖图" },
 };
 
-export function detectKind(filename: string): string | null {
+function detectKind(filename: string): string | null {
     const lower = filename.toLowerCase();
     if (lower.endsWith(".sql")) return "sql";
     if (lower.endsWith(".tf")) return "terraform";
