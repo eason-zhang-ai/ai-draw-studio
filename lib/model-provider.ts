@@ -1,18 +1,19 @@
 import { createOpenAI } from "@ai-sdk/openai";
+import {
+    DEFAULT_BASE_URL,
+    DEFAULT_MODEL,
+    DEFAULT_VISION_MODEL,
+} from "@/lib/model-presets";
 
 export interface ModelConfigInput {
     apiKey?: string;
     baseUrl?: string;
+    /** Primary (text) model used for diagram generation. */
     model?: string;
+    /** Vision model used when the request contains images. */
+    visionModel?: string;
     maxOutputTokens?: number;
 }
-
-const DEFAULTS = {
-    model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
-    baseUrl: process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
-    apiKey: process.env.OPENAI_API_KEY,
-    maxOutputTokens: parseEnvInt(process.env.OPENAI_MAX_OUTPUT_TOKENS),
-};
 
 function parseEnvInt(value?: string) {
     if (!value) return undefined;
@@ -20,20 +21,51 @@ function parseEnvInt(value?: string) {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
-export function resolveModel(config?: ModelConfigInput) {
-    const baseUrl = config?.baseUrl?.trim() || DEFAULTS.baseUrl;
-    const apiKey = config?.apiKey?.trim() || DEFAULTS.apiKey;
-    const model = config?.model?.trim() || DEFAULTS.model;
+const ENV = {
+    baseUrl:
+        process.env.AI_BASE_URL ||
+        process.env.OPENAI_BASE_URL ||
+        DEFAULT_BASE_URL,
+    apiKey: process.env.AI_API_KEY || process.env.OPENAI_API_KEY,
+    model: process.env.AI_MODEL || DEFAULT_MODEL,
+    visionModel: process.env.AI_VISION_MODEL || DEFAULT_VISION_MODEL,
+    maxOutputTokens: parseEnvInt(
+        process.env.AI_MAX_OUTPUT_TOKENS || process.env.OPENAI_MAX_OUTPUT_TOKENS
+    ),
+};
+
+/**
+ * Resolve an AI SDK model client for the active config.
+ *
+ * opts.vision=true routes to the configured vision model
+ * (deepseek-v4-flash-vision-exp by default) instead of the text model.
+ * Client config wins; server env vars are the fallback.
+ */
+export function resolveModel(
+    config?: ModelConfigInput,
+    opts?: { vision?: boolean }
+) {
+    const baseUrl = config?.baseUrl?.trim() || ENV.baseUrl;
+    const apiKey = config?.apiKey?.trim() || ENV.apiKey;
+    const model = opts?.vision
+        ? config?.visionModel?.trim() || ENV.visionModel
+        : config?.model?.trim() || ENV.model;
     const maxOutputTokens =
         typeof config?.maxOutputTokens === "number"
             ? config.maxOutputTokens
-            : DEFAULTS.maxOutputTokens;
+            : ENV.maxOutputTokens;
 
-    const client = createOpenAI({
-        apiKey,
-        baseURL: baseUrl,
-        name: "openai",
-    });
-
+    const client = createOpenAI({ apiKey, baseURL: baseUrl, name: "openai" });
     return { client, model, maxOutputTokens };
+}
+
+/** Server defaults, exposed for the UI to display effective settings. */
+export function getServerDefaults() {
+    return {
+        baseUrl: ENV.baseUrl,
+        hasApiKey: Boolean(ENV.apiKey),
+        model: ENV.model,
+        visionModel: ENV.visionModel,
+        maxOutputTokens: ENV.maxOutputTokens,
+    };
 }

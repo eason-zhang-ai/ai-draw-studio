@@ -6,6 +6,8 @@ export interface ModelConfig {
     apiKey?: string;
     baseUrl?: string;
     model?: string;
+    /** Vision model used when the request contains images. Empty = image upload disabled. */
+    visionModel?: string;
     maxOutputTokens?: number;
 }
 
@@ -36,6 +38,9 @@ export const defaultModelConfig: ModelConfig = {
     apiKey: "",
     baseUrl: "",
     model: "",
+    visionModel:
+        process.env.NEXT_PUBLIC_AI_VISION_MODEL ||
+        "deepseek-v4-flash-vision-exp",
     maxOutputTokens: undefined,
 };
 

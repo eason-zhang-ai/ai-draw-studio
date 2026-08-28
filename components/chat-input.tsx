@@ -26,6 +26,8 @@ interface ChatInputProps {
     historyAvailable?: boolean;
     enableHistoryControls?: boolean;
     historyTooltip?: string;
+    /** Whether image upload is allowed (requires a vision model). */
+    visionEnabled?: boolean;
 }
 
 export function ChatInput({
@@ -40,6 +42,7 @@ export function ChatInput({
     historyAvailable = false,
     enableHistoryControls = true,
     historyTooltip = "View diagram history",
+    visionEnabled = true,
 }: ChatInputProps) {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -70,7 +73,7 @@ export function ChatInput({
     };
 
     const handlePaste = async (e: React.ClipboardEvent) => {
-        if (isBusy) return;
+        if (isBusy || !visionEnabled) return;
 
         const items = e.clipboardData.items;
         const imageItems = Array.from(items).filter((item) =>
@@ -134,7 +137,7 @@ export function ChatInput({
         e.stopPropagation();
         setIsDragging(false);
 
-        if (isBusy) return;
+        if (isBusy || !visionEnabled) return;
 
         const droppedFiles = e.dataTransfer.files;
         const imageFiles = Array.from(droppedFiles).filter((file) =>
@@ -214,8 +217,12 @@ export function ChatInput({
                         variant="outline"
                         size="icon"
                         onClick={triggerFileInput}
-                        disabled={isBusy}
-                        title="Upload reference image"
+                        disabled={isBusy || !visionEnabled}
+                        title={
+                            visionEnabled
+                                ? "Upload reference image"
+                                : "未配置视觉模型，无法上传图片（在模型设置中配置）"
+                        }
                     >
                         <ImageIcon className="h-4 w-4" />
                     </Button>
@@ -227,7 +234,7 @@ export function ChatInput({
                         onChange={handleFileChange}
                         accept="image/*"
                         multiple
-                        disabled={isBusy}
+                        disabled={isBusy || !visionEnabled}
                     />
                 </div>
 

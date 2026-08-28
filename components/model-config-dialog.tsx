@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useModelConfig, defaultModelConfig, ModelConfig } from "@/contexts/model-config-context";
+import { DEEPSEEK_MODEL_PRESETS } from "@/lib/model-presets";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -25,6 +26,7 @@ import {
 } from "@/components/ui/select";
 
 const baseUrlPresets = [
+    { label: "Erix · DeepSeek V4 网关", value: "https://code-api.erix.vip/v1" },
     { label: "OpenAI", value: "https://api.openai.com/v1" },
     { label: "DeepSeek", value: "https://api.deepseek.com/v1" },
     { label: "Moonshot (Kimi)", value: "https://api.moonshot.cn/v1" },
@@ -267,22 +269,68 @@ export function ModelConfigDialog({
                             <span className="block font-medium">模型名</span>
                             <Input
                                 value={draft.model ?? ""}
-                                placeholder="gpt-4o / gpt-4o-mini"
+                                placeholder="deepseek-v4-pro"
                                 onChange={(e) => handleFieldChange("model", e.target.value)}
                             />
-                            <div className="flex items-center gap-3">
-
+                            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                                {DEEPSEEK_MODEL_PRESETS.map((preset) => (
+                                    <Button
+                                        key={preset.id}
+                                        type="button"
+                                        size="sm"
+                                        variant={draft.model === preset.id ? "default" : "secondary"}
+                                        className="h-6 px-2 text-xs"
+                                        onClick={() => handleFieldChange("model", preset.id)}
+                                    >
+                                        {preset.label}
+                                    </Button>
+                                ))}
                                 <Button
                                     type="button"
                                     size="sm"
                                     variant="secondary"
                                     onClick={fetchModels}
                                     disabled={loadingModels}
-                                    className="text-xs underline hover:no-underline"
+                                    className="h-6 px-2 text-xs underline hover:no-underline"
                                 >
                                     {loadingModels ? "获取中..." : "拉取列表"}
                                 </Button>
                             </div>
+                        </label>
+
+                        <label className="text-sm space-y-1">
+                            <span className="block font-medium">视觉模型（图片参考 / 白板照）</span>
+                            <Input
+                                value={draft.visionModel ?? ""}
+                                placeholder="deepseek-v4-flash-vision-exp"
+                                onChange={(e) => handleFieldChange("visionModel", e.target.value)}
+                            />
+                            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                                {DEEPSEEK_MODEL_PRESETS.filter((p) => p.vision).map((preset) => (
+                                    <Button
+                                        key={preset.id}
+                                        type="button"
+                                        size="sm"
+                                        variant={draft.visionModel === preset.id ? "default" : "secondary"}
+                                        className="h-6 px-2 text-xs"
+                                        onClick={() => handleFieldChange("visionModel", preset.id)}
+                                    >
+                                        {preset.label}
+                                    </Button>
+                                ))}
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 px-2 text-xs text-destructive"
+                                    onClick={() => handleFieldChange("visionModel", "")}
+                                >
+                                    关闭视觉
+                                </Button>
+                            </div>
+                            <span className="text-[11px] text-muted-foreground">
+                                留空 = 禁用图片上传；发送含图片的请求时自动路由到此模型。
+                            </span>
                         </label>
 
                         <label className="text-sm space-y-1">

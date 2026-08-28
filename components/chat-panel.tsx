@@ -238,6 +238,7 @@ export default function ChatPanel() {
                     onRequestHistory={() => setShowHistory(true)}
                     historyAvailable={diagramHistory.length > 0}
                     enableHistoryControls
+                    visionEnabled={!!modelConfig.visionModel}
                 />
             </CardFooter>
             <HistoryDialog
