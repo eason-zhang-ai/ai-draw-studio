@@ -4,15 +4,53 @@ import { DrawIoEmbed } from "react-drawio";
 import { CollapsibleChatPanel } from "@/components/collapsible-chat-panel";
 import { useDiagram } from "@/contexts/diagram-context";
 import { Button } from "@/components/ui/button";
-import { Upload, Download } from "lucide-react";
+import { Upload, Download, LayoutGrid } from "lucide-react";
 import { extractDiagramXML } from "@/lib/utils";
+import { xmlToGraph } from "@/lib/xml-graph";
 
 export default function Home() {
-    const { drawioRef, handleDiagramExport, importDiagramFile, exportDiagramFile, chartXML, exportPurpose } = useDiagram();
+    const { drawioRef, handleDiagramExport, importDiagramFile, exportDiagramFile, chartXML, exportPurpose, exportXml, loadDiagram } = useDiagram();
     const [isMobile, setIsMobile] = useState(false);
     const [isChatCollapsed, setIsChatCollapsed] = useState(false);
     const [isDrawIoLoaded, setIsDrawIoLoaded] = useState(false);
+    const [layoutBusy, setLayoutBusy] = useState(false);
+    const [layoutNotice, setLayoutNotice] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const runAutoLayout = async () => {
+        if (layoutBusy) return;
+        setLayoutBusy(true);
+        setLayoutNotice(null);
+        try {
+            const xml = await exportXml();
+            const graph = xmlToGraph(xml);
+            if (graph.nodes.length === 0) {
+                setLayoutNotice("画布上还没有可布局的节点");
+                return;
+            }
+            const res = await fetch("/api/layout", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ graph, tune: true }),
+            });
+            const data = await res.json();
+            if (res.ok && data.xml) {
+                loadDiagram(data.xml);
+                setLayoutNotice(
+                    `✅ Graphviz 自动布局完成：${graph.nodes.length} 节点 / ${graph.edges.length} 连线`
+                );
+            } else {
+                setLayoutNotice(`自动布局失败：${data?.error || res.status}`);
+            }
+        } catch (error) {
+            setLayoutNotice(
+                `自动布局失败：${error instanceof Error ? error.message : String(error)}`
+            );
+        } finally {
+            setLayoutBusy(false);
+            setTimeout(() => setLayoutNotice(null), 6000);
+        }
+    };
 
     useEffect(() => {
         const checkMobile = () => {
@@ -121,6 +159,23 @@ export default function Home() {
                     {/* Import/Export buttons overlayed on top of Draw.io, positioned to look like part of the toolbar */}
                     {isDrawIoLoaded && (
                         <div className="absolute top-2.5 right-20 z-10 flex gap-2 animate-in fade-in duration-300">
+                            <Button 
+                                onClick={runAutoLayout} 
+                                variant="secondary" 
+                                size="sm" 
+                                disabled={layoutBusy}
+                                className="h-7.5 bg-[#c2e7ff] hover:bg-[#abcfe7]/90 text-[#3F3F3F] shadow-sm rounded-[4px]"
+                                title="用 Graphviz 重新自动布局当前图表"
+                                style={{ fontSize: '14px', fontWeight: 550}}
+                            >
+                                <LayoutGrid className="h-3 w-3 mr-1" />
+                                <span className="text-xs" style={{ fontSize: '14px' }}>自动布局</span>
+                            </Button>
+                            {layoutNotice && (
+                                <div className="absolute top-10 right-0 z-20 rounded-md bg-black/80 px-3 py-1.5 text-xs text-white shadow">
+                                    {layoutNotice}
+                                </div>
+                            )}
                             <Button 
                                 onClick={triggerFileInput} 
                                 variant="secondary" 

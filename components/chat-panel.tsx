@@ -181,12 +181,49 @@ export default function ChatPanel() {
     // Add state for input management
     const [input, setInput] = useState("");
 
+    // Auto-retry: the erix endpoint intermittently degenerates into a pure
+    // reasoning loop with zero output (~50% on some prompts). When a turn
+    // finishes with no text and no tool calls, resend the last input once.
+    const lastSubmitRef = useRef<{ parts: any[]; body: any } | null>(null);
+    const autoRetryCountRef = useRef(0);
+    const MAX_AUTO_RETRIES = 2;
+
     // Remove the currentXmlRef and related useEffect
     const { messages, sendMessage, addToolResult, status, error, setMessages } =
         useChat({
             transport: new DefaultChatTransport({
                 api: "/api/chat",
             }),
+            onFinish: ({ message }) => {
+                const hasOutput = (message.parts || []).some(
+                    (p: any) =>
+                        (p.type === "text" && p.text?.trim()) ||
+                        p.type.startsWith("tool-")
+                );
+                if (!hasOutput && lastSubmitRef.current) {
+                    if (autoRetryCountRef.current < MAX_AUTO_RETRIES) {
+                        autoRetryCountRef.current += 1;
+                        appendNotice(
+                            setMessages,
+                            `⚠️ 本次生成出现异常（超长推理无输出），正在自动重试（${autoRetryCountRef.current}/${MAX_AUTO_RETRIES}）…`
+                        );
+                        sendMessage(
+                            { parts: lastSubmitRef.current.parts },
+                            { body: lastSubmitRef.current.body }
+                        );
+                    } else {
+                        autoRetryCountRef.current = 0;
+                        lastSubmitRef.current = null;
+                        appendNotice(
+                            setMessages,
+                            "❌ 自动重试仍无输出，请重新发送或切换模型。"
+                        );
+                    }
+                } else {
+                    autoRetryCountRef.current = 0;
+                    lastSubmitRef.current = null;
+                }
+            },
             async onToolCall({ toolCall }) {
                 if (toolCall.toolName === "display_diagram") {
                     // Diagram is handled streamingly in the ChatMessageDisplay component
@@ -202,6 +239,40 @@ export default function ChatPanel() {
                                 .then((xml) => runSelfCheck(setMessages, xml))
                                 .catch(() => {});
                         }, 1500);
+                    }
+                } else if (toolCall.toolName === "layout_diagram") {
+                    const graph = toolCall.input as {
+                        nodes: unknown[];
+                        edges: unknown[];
+                        direction?: "TB" | "LR";
+                    };
+                    try {
+                        const res = await fetch("/api/layout", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ graph, tune: true }),
+                        });
+                        const data = await res.json();
+                        if (res.ok && data.xml) {
+                            onDisplayChart(data.xml);
+                            addToolResult({
+                                tool: "layout_diagram",
+                                toolCallId: toolCall.toolCallId,
+                                output: `Graphviz 自动布局完成（${graph.nodes?.length || 0} 节点，${graph.edges?.length || 0} 连线）。`,
+                            });
+                        } else {
+                            addToolResult({
+                                tool: "layout_diagram",
+                                toolCallId: toolCall.toolCallId,
+                                output: `自动布局失败：${data?.error || res.status}`,
+                            });
+                        }
+                    } catch (error) {
+                        addToolResult({
+                            tool: "layout_diagram",
+                            toolCallId: toolCall.toolCallId,
+                            output: `自动布局失败：${error instanceof Error ? error.message : String(error)}`,
+                        });
                     }
                 } else if (toolCall.toolName === "edit_diagram") {
                     const { edits } = toolCall.input as {
@@ -289,15 +360,12 @@ export default function ChatPanel() {
                     }
                 }
 
-                sendMessage(
-                    { parts },
-                    {
-                        body: {
-                            xml: chartXml,
-                            modelConfig,
-                        },
-                    }
-                );
+                const body = {
+                    xml: chartXml,
+                    modelConfig,
+                };
+                lastSubmitRef.current = { parts, body };
+                sendMessage({ parts }, { body });
 
                 // Clear input and files after submission
                 setInput("");

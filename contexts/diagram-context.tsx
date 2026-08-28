@@ -19,6 +19,8 @@ interface DiagramContextType {
     exportPurpose: 'chat' | 'file';
     /** Export the current canvas as a PNG data URL (used by vision self-check). */
     exportPng: () => Promise<string>;
+    /** Export the current canvas as .drawio XML (used by auto-layout). */
+    exportXml: () => Promise<string>;
 }
 
 const DiagramContext = createContext<DiagramContextType | undefined>(undefined);
@@ -34,6 +36,32 @@ export function DiagramProvider({ children }: { children: React.ReactNode }) {
     const resolverRef = useRef<((value: string) => void) | null>(null);
     const pngResolverRef = useRef<((value: string) => void) | null>(null);
     const pngExportPending = useRef(false);
+    const xmlResolverRef = useRef<((value: string) => void) | null>(null);
+    const xmlExportPending = useRef(false);
+
+    const exportXml = () => {
+        return new Promise<string>((resolve, reject) => {
+            if (!drawioRef.current) {
+                reject(new Error("drawio 编辑器尚未就绪"));
+                return;
+            }
+            let settled = false;
+            const timer = setTimeout(() => {
+                if (settled) return;
+                settled = true;
+                xmlResolverRef.current = null;
+                reject(new Error("XML 导出超时"));
+            }, 8000);
+            xmlResolverRef.current = (value: string) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                resolve(value);
+            };
+            xmlExportPending.current = true;
+            drawioRef.current.exportDiagram({ format: "xmlsvg" });
+        });
+    };
 
     const exportPng = () => {
         return new Promise<string>((resolve, reject) => {
@@ -107,6 +135,17 @@ export function DiagramProvider({ children }: { children: React.ReactNode }) {
             return;
         }
 
+        // XML export for auto-layout: resolve with the extracted XML.
+        if (xmlExportPending.current) {
+            xmlExportPending.current = false;
+            const resolver = xmlResolverRef.current;
+            xmlResolverRef.current = null;
+            if (resolver) {
+                resolver(extractDiagramXML(data?.data || ""));
+            }
+            return;
+        }
+
         const extractedXML = extractDiagramXML(data.data);
         
         // 只有在聊天导出时才更新状态，避免文件导出时干扰
@@ -172,6 +211,7 @@ export function DiagramProvider({ children }: { children: React.ReactNode }) {
                 exportDiagramFile,
                 exportPurpose,
                 exportPng,
+                exportXml,
             }}
         >
             {children}

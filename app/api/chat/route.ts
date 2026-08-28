@@ -3,7 +3,6 @@ import { z } from "zod";
 import { resolveModel } from "@/lib/model-provider";
 import {
   DIAGRAM_QUALITY_GUIDELINES,
-  getProfessionalDiagramGuidelines,
 } from "@/lib/diagram-prompt-guidelines";
 import { buildDrawioSkillContext } from "@/lib/skill-assets";
 import { searchShapesBatch, searchAiIcons } from "@/lib/shape-search";
@@ -47,6 +46,7 @@ Use tools only:
 - edit_diagram: small exact edits to the current XML.
 - search_shapes: look up the exact official draw.io style for vendor/domain shapes (AWS/Azure/GCP/Cisco/Kubernetes/UML/BPMN/ER/network...). NEVER guess a shape=mxgraph.* name — a wrong name renders as a blank box. Look up every shape you need in ONE batched call (queries array), then never call it again in this turn.
 - ai_icon: look up an AI/LLM or data-store brand logo style (OpenAI, Claude, DeepSeek, Redis, Postgres...). draw.io has no built-in AI logos.
+- layout_diagram: for LARGE diagrams (15+ nodes, dependency/call graphs, module structure) describe the graph structurally (nodes+edges, NO coordinates) and Graphviz lays it out deterministically. Do NOT hand-place coordinates for such graphs.
 - Never return raw XML as normal text.
 - Minimize tool round-trips: plan which shapes/logos you need up front, batch them into ONE search_shapes / ai_icon call, then emit ONE display_diagram or edit_diagram call.
 
@@ -107,7 +107,7 @@ User input:
 ${lastMessageText}
 """
 
-${getProfessionalDiagramGuidelines(lastMessageText)}`;
+`;
 
     // Convert UIMessages to ModelMessages and add system message
     const modelMessages = convertToModelMessages(recentMessages);
@@ -193,69 +193,13 @@ ${buildDrawioSkillContext(lastMessageText)}`;
       tools: {
         // Client-side tool that will be executed on the client
           display_diagram: {
-              description: `Display a diagram on draw.io. Pass the XML content inside <root> tags.
-
-VALIDATION RULES (XML will be rejected if violated):
-1. All mxCell elements must be DIRECT children of <root> - never nested
-2. Every mxCell needs a unique id
-3. Every mxCell (except id="0") needs a valid parent attribute
-4. Edge source/target must reference existing cell IDs
-5. Escape special chars in values: &lt; &gt; &amp; &quot;
-6. Always start with: <mxCell id="0"/><mxCell id="1" parent="0"/>
-
-Example with swimlanes and edges (note: all mxCells are siblings):
-<root>
-  <mxCell id="0"/>
-  <mxCell id="1" parent="0"/>
-  <mxCell id="lane1" value="Frontend" style="swimlane;" vertex="1" parent="1">
-    <mxGeometry x="40" y="40" width="200" height="200" as="geometry"/>
-  </mxCell>
-  <mxCell id="step1" value="Step 1" style="rounded=1;" vertex="1" parent="lane1">
-    <mxGeometry x="20" y="60" width="160" height="40" as="geometry"/>
-  </mxCell>
-  <mxCell id="lane2" value="Backend" style="swimlane;" vertex="1" parent="1">
-    <mxGeometry x="280" y="40" width="200" height="200" as="geometry"/>
-  </mxCell>
-  <mxCell id="step2" value="Step 2" style="rounded=1;" vertex="1" parent="lane2">
-    <mxGeometry x="20" y="60" width="160" height="40" as="geometry"/>
-  </mxCell>
-  <mxCell id="edge1" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;strokeWidth=2;strokeColor=#0066CC;flowAnimation=1;" edge="1" parent="1" source="step1" target="step2">
-    <mxGeometry relative="1" as="geometry"/>
-  </mxCell>
-</root>
-
-Connector styling tips:
-- Use strokeWidth=N to control line thickness (default is 1)
-- Use strokeColor=#RRGGBB to set line color
-- Add flowAnimation=1 to make connectors animated
-- Use edgeStyle=orthogonalEdgeStyle for right-angle connectors
-- Use exitX/exitY and entryX/entryY to anchor connectors on the correct side of each shape
-- Use mxPoint waypoints when a line needs to route around a container, label, or sibling node
-- Use curved=1;rounded=1 when a connector crosses lanes, returns to an earlier step, or represents secondary dependency; do not force every connector into a straight or orthogonal line
-- Keep parallel connectors separated with different waypoints or route them through a shared bus/hub node
-- Use elbow=vertical/horizontal for elbow-style connectors
-- Use curved=1 for curved connectors
-- Use dashed=1 for dashed lines
-- Combine endArrow=classic with startArrow=classic for double-headed arrows
-- Use opacity=30 to 50 for less important connections to reduce visual clutter
-- Apply consistent connector styles for similar types of relationships
-- Minimize crossings by using appropriate routing and jump styles
-
-Notes:
-- For AWS diagrams, use **AWS 2025 icons**.
-- For animated connectors, add "flowAnimation=1" to edge style.
-`,
+              description: `Display a NEW diagram on draw.io (or fully replace the current one). Pass the XML inside <root> tags. Validation: all mxCell must be direct children of <root>; unique ids; every cell except id="0" needs a parent; edges reference existing ids; escape & < > " in values; always include <mxCell id="0"/><mxCell id="1" parent="0"/>. Authoring rules (skeleton, shapes, edges, palette) are in the system prompt.`,
               inputSchema: z.object({
                   xml: z.string().describe("XML string to be displayed on draw.io")
               })
           },
           edit_diagram: {
-              description: `Edit specific parts of the current diagram by replacing exact line matches. Use this tool to make targeted fixes without regenerating the entire XML.
-IMPORTANT: Keep edits concise:
-- Only include the lines that are changing, plus 1-2 surrounding lines for context if needed
-- Break large changes into multiple smaller edits
-- Each search must contain complete lines (never truncate mid-line)
-- First match only - be specific enough to target the right element`,
+              description: `Edit specific parts of the current diagram with exact search/replace line pairs (minimal targeted fixes; never regenerate). Each search must be complete lines, first match only.`,
               inputSchema: z.object({
                   edits: z.array(z.object({
                       search: z.string().describe("Exact lines to search for (including whitespace and indentation)"),
@@ -307,6 +251,25 @@ IMPORTANT: Keep edits concise:
                   }
                   return lines.join("\n\n");
               },
+          },
+          layout_diagram: {
+              description: `For LARGE diagrams (15+ nodes, dependency/call graphs, module structure, infrastructure maps): describe the graph STRUCTURALLY — nodes and edges WITHOUT coordinates — and a deterministic Graphviz layout engine places the nodes and routes the edges orthogonally around them. Nodes may carry an optional style string, a group path ('core/db' creates nested containers), width/height. Edges reference node ids.`,
+              inputSchema: z.object({
+                  direction: z.enum(["TB", "LR"]).optional().describe("layout rank direction, default TB"),
+                  nodes: z.array(z.object({
+                      id: z.string().describe("unique node id (not 0 or 1)"),
+                      label: z.string().optional(),
+                      style: z.string().optional().describe("draw.io style string (from search_shapes if a vendor icon)"),
+                      group: z.string().optional().describe("group key or '/'-delimited path for nested containers"),
+                      width: z.number().optional(),
+                      height: z.number().optional(),
+                  })).describe("all graph nodes"),
+                  edges: z.array(z.object({
+                      source: z.string(),
+                      target: z.string(),
+                      label: z.string().optional(),
+                  })).describe("all graph edges"),
+              }),
           },
       },
         temperature: 0,
