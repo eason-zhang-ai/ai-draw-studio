@@ -48,6 +48,7 @@ Use tools only:
 - ai_icon: look up an AI/LLM or data-store brand logo style (OpenAI, Claude, DeepSeek, Redis, Postgres...). draw.io has no built-in AI logos.
 - layout_diagram: for LARGE diagrams (15+ nodes, dependency/call graphs, module structure) describe the graph structurally (nodes+edges, NO coordinates) and Graphviz lays it out deterministically. Do NOT hand-place coordinates for such graphs.
 - apply_style: apply a named style preset (dark/corporate/handdrawn/colorblind-safe/default) to the whole diagram when the user asks for a theme change.
+- c4_diagram: for C4 model requests (System Context / Container / Component levels) describe each level's elements+relations as JSON — a deterministic generator emits a multi-page diagram with click-to-drill-down links.
 - Never return raw XML as normal text.
 - Minimize tool round-trips: plan which shapes/logos you need up front, batch them into ONE search_shapes / ai_icon call, then emit ONE display_diagram or edit_diagram call.
 
@@ -276,6 +277,27 @@ ${buildDrawioSkillContext(lastMessageText)}`;
               description: `Apply a named style preset to the whole diagram (re-theme without touching layout). Use when the user asks for dark mode, a corporate theme, hand-drawn look, or colorblind-safe colors.`,
               inputSchema: z.object({
                   preset: z.enum(["dark", "corporate", "handdrawn", "colorblind-safe", "default"]).describe("style preset name"),
+              }),
+          },
+          c4_diagram: {
+              description: `Generate a C4 model (System Context / Container / Component levels) as a multi-page diagram with click-to-drill-down links between pages. Describe each level's elements (id, type person/system/external/container/database/component, label, tech/desc optional, children = next level name for drill-down) and relations (from, to, label).`,
+              inputSchema: z.object({
+                  levels: z.array(z.object({
+                      name: z.string().describe("level name, e.g. 'System Context'"),
+                      elements: z.array(z.object({
+                          id: z.string().describe("unique element id across ALL levels"),
+                          type: z.string().describe("person|system|external|container|database|component"),
+                          label: z.string(),
+                          tech: z.string().optional(),
+                          desc: z.string().optional(),
+                          children: z.string().optional().describe("name of the next level this element drills down into"),
+                      })),
+                      relations: z.array(z.object({
+                          from: z.string(),
+                          to: z.string(),
+                          label: z.string().optional(),
+                      })),
+                  })),
               }),
           },
       },

@@ -196,6 +196,11 @@ export default function ChatPanel() {
     const lastSubmitRef = useRef<{ parts: any[]; body: any } | null>(null);
     const autoRetryCountRef = useRef(0);
     const MAX_AUTO_RETRIES = 2;
+    // C4 multi-page documents can be overwritten by a follow-up
+    // display_diagram in the same turn; keep the XML to restore it when
+    // this turn did NOT emit a display_diagram.
+    const c4XmlRef = useRef<string | null>(null);
+    const turnHadDisplayRef = useRef(false);
 
     // Remove the currentXmlRef and related useEffect
     const { messages, sendMessage, addToolResult, status, error, setMessages } =
@@ -232,9 +237,17 @@ export default function ChatPanel() {
                     autoRetryCountRef.current = 0;
                     lastSubmitRef.current = null;
                 }
+                // Restore the C4 multi-page document if this turn loaded one
+                // and no display_diagram overwrote it.
+                if (c4XmlRef.current && !turnHadDisplayRef.current) {
+                    onDisplayChart(c4XmlRef.current);
+                }
+                c4XmlRef.current = null;
+                turnHadDisplayRef.current = false;
             },
             async onToolCall({ toolCall }) {
                 if (toolCall.toolName === "display_diagram") {
+                    turnHadDisplayRef.current = true;
                     // Diagram is handled streamingly in the ChatMessageDisplay component
                     addToolResult({
                         tool: "display_diagram",
@@ -313,6 +326,37 @@ export default function ChatPanel() {
                             tool: "apply_style",
                             toolCallId: toolCall.toolCallId,
                             output: `样式应用失败：${error instanceof Error ? error.message : String(error)}`,
+                        });
+                    }
+                } else if (toolCall.toolName === "c4_diagram") {
+                    const c4 = toolCall.input as { levels: unknown[] };
+                    try {
+                        const res = await fetch("/api/c4", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ c4 }),
+                        });
+                        const data = await res.json();
+                        if (res.ok && data.xml) {
+                            c4XmlRef.current = data.xml;
+                            onDisplayChart(data.xml);
+                            addToolResult({
+                                tool: "c4_diagram",
+                                toolCallId: toolCall.toolCallId,
+                                output: `C4 模型生成完成（${data.pages || c4.levels.length} 页，支持点击下钻）。`,
+                            });
+                        } else {
+                            addToolResult({
+                                tool: "c4_diagram",
+                                toolCallId: toolCall.toolCallId,
+                                output: `C4 生成失败：${data?.error || res.status}`,
+                            });
+                        }
+                    } catch (error) {
+                        addToolResult({
+                            tool: "c4_diagram",
+                            toolCallId: toolCall.toolCallId,
+                            output: `C4 生成失败：${error instanceof Error ? error.message : String(error)}`,
                         });
                     }
                 } else if (toolCall.toolName === "edit_diagram") {
