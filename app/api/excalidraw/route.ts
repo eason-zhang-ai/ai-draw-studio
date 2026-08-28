@@ -5,6 +5,7 @@ import {
     DIAGRAM_QUALITY_GUIDELINES,
     getProfessionalDiagramGuidelines,
 } from "@/lib/diagram-prompt-guidelines";
+import { buildExcalidrawSkillContext } from "@/lib/domain-skills";
 
 const DEFAULT_MAX_OUTPUT_TOKENS = 12_000;
 const MAX_OUTPUT_TOKENS_CAP = 24_000;
@@ -112,8 +113,13 @@ ${getProfessionalDiagramGuidelines(lastMessageText)}
             MAX_OUTPUT_TOKENS_CAP
         );
 
+        const composedSystem = `${systemMessage}
+
+## excalidraw-skill schema reference
+${buildExcalidrawSkillContext(lastMessageText)}`;
+
         const result = streamText({
-            system: systemMessage,
+            system: composedSystem,
             model: client.chat(model),
             messages: enhancedMessages,
             temperature: 0,

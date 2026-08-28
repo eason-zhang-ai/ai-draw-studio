@@ -123,7 +123,7 @@ const SHAPESEARCH_PYTHON_HINT =
  * - sections of diagram-types.md matched by the user's request keywords;
  * - the hand-writable style cheat sheet from shapes.md, if budget allows.
  */
-export function buildDrawioSkillContext(userText: string, budget = 18000): string {
+export function buildDrawioSkillContext(userText: string, budget = 12000): string {
     const parts: string[] = [];
 
     let xmlAuthoring = loadReference("xml-authoring.md") || "";

@@ -5,6 +5,7 @@ import {
     DIAGRAM_QUALITY_GUIDELINES,
     getProfessionalDiagramGuidelines,
 } from "@/lib/diagram-prompt-guidelines";
+import { buildPlantumlSkillContext } from "@/lib/domain-skills";
 
 export const maxDuration = 60;
 const MAX_CONTEXT_MESSAGES = 8;
@@ -92,8 +93,13 @@ ${getProfessionalDiagramGuidelines(lastMessageText)}
 
         const { client, model } = resolveModel(modelConfig);
 
+        const composedSystem = `${systemMessage}
+
+## plantuml-skill reference
+${buildPlantumlSkillContext(lastMessageText)}`;
+
         const result = streamText({
-            system: systemMessage,
+            system: composedSystem,
             model: client.chat(model),
             messages: enhancedMessages,
             temperature: 0.2,

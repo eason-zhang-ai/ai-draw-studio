@@ -5,6 +5,7 @@ import {
     DIAGRAM_QUALITY_GUIDELINES,
     getProfessionalDiagramGuidelines,
 } from "@/lib/diagram-prompt-guidelines";
+import { buildMermaidSkillContext } from "@/lib/domain-skills";
 
 export const maxDuration = 60;
 const MAX_CONTEXT_MESSAGES = 8;
@@ -93,8 +94,13 @@ ${getProfessionalDiagramGuidelines(lastMessageText)}
 
         const { client, model } = resolveModel(modelConfig);
 
+        const composedSystem = `${systemMessage}
+
+## mermaid-skill syntax reference
+${buildMermaidSkillContext(lastMessageText)}`;
+
         const result = streamText({
-            system: systemMessage,
+            system: composedSystem,
             model: client.chat(model),
             messages: enhancedMessages,
             temperature: 0.2,

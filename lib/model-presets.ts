@@ -20,7 +20,7 @@ export const DEEPSEEK_MODEL_PRESETS: ModelPreset[] = [
 ];
 
 export const DEFAULT_BASE_URL = "https://code-api.erix.vip/v1";
-export const DEFAULT_MODEL = "deepseek-v4-pro";
+export const DEFAULT_MODEL = "deepseek-v4-flash";
 export const DEFAULT_VISION_MODEL = "deepseek-v4-flash-vision-exp";
 
 export function isVisionModel(model: string): boolean {

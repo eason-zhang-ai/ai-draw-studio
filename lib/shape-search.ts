@@ -180,6 +180,21 @@ async function inlineSvg(url: string): Promise<string> {
     }
 }
 
+/**
+ * Resolve the image value for an icon style.
+ * By default uses the remote CDN URL (short — keeps model context small);
+ * set AI_ICON_INLINE=1 to inline the SVG as a data URI instead (self-
+ * contained diagrams, no network at render time, but the base64 payload
+ * bloats model context and slows generation).
+ */
+const INLINE_ICONS =
+    (process.env.AI_ICON_INLINE || "0") === "1";
+
+async function resolveIconImage(url: string): Promise<string> {
+    if (!INLINE_ICONS) return url;
+    return inlineSvg(url);
+}
+
 export async function searchAiIcons(
     query: string,
     size = 48,
@@ -214,7 +229,7 @@ export async function searchAiIcons(
         }
         if (!file) file = [...variants].sort()[0];
         const url = `${manifest.cdn}${file}.svg`;
-        const image = await inlineSvg(url);
+        const image = await resolveIconImage(url);
         results.push({
             brand: base,
             file,
@@ -230,7 +245,7 @@ export async function searchAiIcons(
         );
         if (brand) {
             const url = SIMPLEICONS_CDN + SUPPLEMENT[brand];
-            const image = await inlineSvg(url);
+            const image = await resolveIconImage(url);
             results.push({
                 brand,
                 file: `simpleicons:${SUPPLEMENT[brand]}`,
