@@ -1,4 +1,4 @@
-import { createOpenAI } from "@ai-sdk/openai";
+import { createDeepSeek } from "@ai-sdk/deepseek";
 import {
     DEFAULT_BASE_URL,
     DEFAULT_MODEL,
@@ -55,7 +55,12 @@ export function resolveModel(
             ? config.maxOutputTokens
             : ENV.maxOutputTokens;
 
-    const client = createOpenAI({ apiKey, baseURL: baseUrl, name: "openai" });
+    // NOTE: use the dedicated DeepSeek provider (not the OpenAI-compatible one).
+    // The erix endpoint runs models in "thinking mode" and REQUIRES the
+    // assistant's reasoning_content to be echoed back on tool round-trips;
+    // @ai-sdk/deepseek preserves reasoning parts across messages while
+    // @ai-sdk/openai drops them, which makes the post-tool call fail with 400.
+    const client = createDeepSeek({ apiKey, baseURL: baseUrl });
     return { client, model, maxOutputTokens };
 }
 

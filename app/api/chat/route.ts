@@ -1,4 +1,4 @@
-import { streamText, convertToModelMessages } from 'ai';
+import { streamText, convertToModelMessages, stepCountIs } from 'ai';
 import { z } from "zod";
 import { resolveModel } from "@/lib/model-provider";
 import {
@@ -292,6 +292,10 @@ IMPORTANT: Keep edits concise:
           },
       },
         temperature: 0,
+        // Server-executed tools (search_shapes / ai_icon) need follow-up model
+        // calls; the default stopWhen=stepCountIs(1) would end the stream right
+        // after the first tool round with no final answer.
+        stopWhen: stepCountIs(3),
     });
 
     // Error handler function to provide detailed error messages
