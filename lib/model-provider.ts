@@ -1,4 +1,4 @@
-import { createDeepSeek } from "@ai-sdk/deepseek";
+import { createOpenAI } from "@ai-sdk/openai";
 import {
     DEFAULT_BASE_URL,
     DEFAULT_MODEL,
@@ -55,12 +55,13 @@ export function resolveModel(
             ? config.maxOutputTokens
             : ENV.maxOutputTokens;
 
-    // NOTE: use the dedicated DeepSeek provider (not the OpenAI-compatible one).
-    // The erix endpoint runs models in "thinking mode" and REQUIRES the
-    // assistant's reasoning_content to be echoed back on tool round-trips;
-    // @ai-sdk/deepseek preserves reasoning parts across messages while
-    // @ai-sdk/openai drops them, which makes the post-tool call fail with 400.
-    const client = createDeepSeek({ apiKey, baseURL: baseUrl });
+    // NOTE on provider choice: @ai-sdk/openai is used (not @ai-sdk/deepseek)
+    // because it converts image parts to image_url for the vision model, AND
+    // it passes through the real tool-call ids on round-trips. The erix
+    // gateway validates tool-call ids against its own records — fabricated
+    // ids fail with a misleading "reasoning_content must be passed back"
+    // error, which was tracked down via scripts/repro-tools.ts.
+    const client = createOpenAI({ apiKey, baseURL: baseUrl, name: "openai" });
     return { client, model, maxOutputTokens };
 }
 

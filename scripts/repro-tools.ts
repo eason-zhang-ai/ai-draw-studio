@@ -1,5 +1,6 @@
 // Minimal repro: AI SDK streamText + server-executed tool against the erix API.
 // Usage: npx tsx scripts/repro-tools.ts
+import { createOpenAI } from "@ai-sdk/openai";
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import { streamText, stepCountIs } from "ai";
 import { z } from "zod";
@@ -19,11 +20,15 @@ const loggingFetch: typeof fetch = async (input, init) => {
             console.log(`   msg[${i}] role=${m.role} content=${JSON.stringify(m.content).slice(0, 40)} ${hasReasoning} ${hasToolCalls}`);
         });
     }
+    if (typeof init?.body === "string" && n === 2) {
+        require("fs").writeFileSync("/tmp/fetch2-body.json", init.body);
+        console.log("[fetch #2] body saved");
+    }
     const res = await realFetch(input, init);
     console.log(`[fetch #${n}] status=${res.status}`);
     return res;
 };
-const client = createDeepSeek({
+const client = (process.env.PROVIDER === "openai" ? createOpenAI : createDeepSeek)({
     apiKey: process.env.AI_API_KEY,
     baseURL: process.env.AI_BASE_URL || "https://code-api.erix.vip/v1",
     fetch: loggingFetch,

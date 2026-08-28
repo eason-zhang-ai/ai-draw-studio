@@ -71,14 +71,26 @@ export async function POST(req: Request) {
     const requestStartedAt = Date.now();
     const { messages, xml, modelConfig } = await req.json();
 
-      const recentMessages = messages.slice(-MAX_CONTEXT_MESSAGES);
+    // Normalize UI messages: convert `file` UI parts to `image` parts so
+    // convertToModelMessages can handle them (AI SDK v5 cannot convert file
+    // parts to model messages).
+    const recentMessages = messages
+      .slice(-MAX_CONTEXT_MESSAGES)
+      .map((m: any) => ({
+        ...m,
+        parts: (m.parts || []).map((p: any) =>
+          p.type === "file"
+            ? { type: "image", image: p.url, mediaType: p.mediaType }
+            : p
+        ),
+      }));
     const lastMessage = recentMessages[recentMessages.length - 1];
 
     // Extract text from the last message parts
     const lastMessageText = lastMessage.parts?.find((part: any) => part.type === 'text')?.text || '';
 
-    // Extract file parts (images) from the last message
-    const fileParts = lastMessage.parts?.filter((part: any) => part.type === 'file') || [];
+    // Extract image parts from the last message
+    const imageParts = lastMessage.parts?.filter((part: any) => part.type === 'image') || [];
 
     const formattedTextContent = `
 Current diagram XML:
@@ -100,17 +112,17 @@ ${getProfessionalDiagramGuidelines(lastMessageText)}`;
     if (enhancedMessages.length >= 1) {
       const lastModelMessage = enhancedMessages[enhancedMessages.length - 1];
       if (lastModelMessage.role === 'user') {
-        // Build content array with text and file parts
+        // Build content array with text and image parts
         const contentParts: any[] = [
           { type: 'text', text: formattedTextContent }
         ];
 
         // Add image parts back
-        for (const filePart of fileParts) {
+        for (const imagePart of imageParts) {
           contentParts.push({
             type: 'image',
-            image: filePart.url,
-            mimeType: filePart.mediaType
+            image: imagePart.url,
+            mimeType: imagePart.mediaType
           });
         }
 
@@ -122,7 +134,7 @@ ${getProfessionalDiagramGuidelines(lastMessageText)}`;
     }
 
     // Route to the vision model when the request carries images.
-    const hasImages = fileParts.length > 0;
+    const hasImages = imageParts.length > 0;
     const { client, model, maxOutputTokens } = resolveModel(modelConfig, {
       vision: hasImages,
     });
