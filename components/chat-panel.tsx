@@ -77,6 +77,7 @@ export default function ChatPanel() {
         setSelfCheckBusy(true);
         let fixedCount = 0;
         let xml = currentXml;
+        let lastIssues: any[] = [];
         try {
             for (let round = 0; round < 2; round++) {
                 const png = await exportPng();
@@ -90,10 +91,11 @@ export default function ChatPanel() {
                     }),
                 });
                 const checkData = await checkRes.json();
-                const issues: unknown[] =
+                const issues: any[] =
                     checkRes.ok && Array.isArray(checkData.issues)
                         ? checkData.issues
                         : [];
+                lastIssues = issues;
                 if (issues.length === 0) {
                     appendNotice(
                         setMessages,
@@ -122,11 +124,18 @@ export default function ChatPanel() {
                     break;
                 }
             }
+            const issueList = lastIssues
+                .slice(0, 6)
+                .map(
+                    (i: any) =>
+                        `• [${i.severity || "?"}] ${i.location || ""}: ${i.description || ""}`
+                )
+                .join("\n");
             appendNotice(
                 setMessages,
                 fixedCount > 0
-                    ? `🔧 已自动修复 ${fixedCount} 处问题，请在画布上复核`
-                    : "🔍 自检发现少量问题，建议手动微调"
+                    ? `🔧 已自动修复 ${fixedCount} 处，请在画布上复核`
+                    : `🔍 自检发现 ${lastIssues.length} 处问题（自动修复未生效，建议手动调整）：\n${issueList}`
             );
         } catch (error) {
             appendNotice(
