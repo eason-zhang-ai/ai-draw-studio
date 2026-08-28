@@ -13,8 +13,11 @@ const DATA_DIR = path.join(process.cwd(), "skills", "drawio-skill", "data");
 const SHAPE_INDEX_GZ = path.join(DATA_DIR, "shape-index.json.gz");
 const LOBE_ICONS = path.join(DATA_DIR, "lobe-icons.json");
 
-const ICON_STYLE_PREFIX = "shape=image;html=1;imageAspect=0;aspect=fixed;";
+const ICON_STYLE_PREFIX =
+    "shape=image;html=1;imageAspect=0;aspect=fixed;image=";
 const SIMPLEICONS_CDN = "https://cdn.simpleicons.org/";
+// remote SVG fetch timeout for inlining (ms)
+const SVG_FETCH_TIMEOUT_MS = 12000;
 
 // simple-icons supplements for common RAG/LLM data stores lobe-icons lacks
 const SUPPLEMENT: Record<string, string> = {
@@ -151,7 +154,37 @@ export interface IconResult {
 
 const VARIANT_ORDER = ["-color", "-brand-color", "", "-brand", "-text", "-text-cn"];
 
-export function searchAiIcons(query: string, size = 48, limit = 6): IconResult[] {
+/**
+ * Inline a remote SVG as a draw.io-safe data URI (marker-less base64:
+ * draw.io splits style values on ';', so ";base64," would truncate the
+ * image= value). Falls back to the remote URL when the fetch fails.
+ */
+async function inlineSvg(url: string): Promise<string> {
+    try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), SVG_FETCH_TIMEOUT_MS);
+        const res = await fetch(url, { signal: controller.signal });
+        clearTimeout(timer);
+        if (!res.ok) return url;
+        let svg = await res.text();
+        // Rewrite the 1em intrinsic size so draw.io scales the inlined SVG.
+        svg = svg
+            .replace(/width="1em"/g, 'width="24"')
+            .replace(/height="1em"/g, 'height="24"');
+        return (
+            "data:image/svg+xml," +
+            Buffer.from(svg, "utf-8").toString("base64")
+        );
+    } catch {
+        return url;
+    }
+}
+
+export async function searchAiIcons(
+    query: string,
+    size = 48,
+    limit = 6
+): Promise<IconResult[]> {
     const manifest = loadIconsManifest();
     const results: IconResult[] = [];
     const q = squish(query);
@@ -181,12 +214,13 @@ export function searchAiIcons(query: string, size = 48, limit = 6): IconResult[]
         }
         if (!file) file = [...variants].sort()[0];
         const url = `${manifest.cdn}${file}.svg`;
+        const image = await inlineSvg(url);
         results.push({
             brand: base,
             file,
             w: size,
             h: size,
-            style: ICON_STYLE_PREFIX + url,
+            style: ICON_STYLE_PREFIX + image,
         });
     }
 
@@ -196,12 +230,13 @@ export function searchAiIcons(query: string, size = 48, limit = 6): IconResult[]
         );
         if (brand) {
             const url = SIMPLEICONS_CDN + SUPPLEMENT[brand];
+            const image = await inlineSvg(url);
             results.push({
                 brand,
                 file: `simpleicons:${SUPPLEMENT[brand]}`,
                 w: size,
                 h: size,
-                style: ICON_STYLE_PREFIX + url,
+                style: ICON_STYLE_PREFIX + image,
             });
         }
     }

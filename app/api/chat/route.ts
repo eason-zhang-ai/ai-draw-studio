@@ -10,7 +10,7 @@ import { searchShapesBatch, searchAiIcons } from "@/lib/shape-search";
 
 export const maxDuration = 90
 const MAX_CONTEXT_MESSAGES = 3;
-const DEFAULT_MAX_OUTPUT_TOKENS = 16000;
+const DEFAULT_MAX_OUTPUT_TOKENS = 32000;
 const MAX_OUTPUT_TOKENS = 64000;
 const MAX_XML_CONTEXT_CHARS = 4000;
 
@@ -34,8 +34,11 @@ ${xml.slice(-tailLength)}`;
 }
 
 const FAST_DRAWIO_SYSTEM_MESSAGE = `
-You are a professional draw.io diagram assistant.
-Think briefly and then call the appropriate tool directly. Do not spend many tokens on hidden reasoning.
+You are a professional draw.io diagram assistant with STRICT tool discipline.
+- Your FIRST output must be a tool call — never emit free text or long hidden reasoning before calling a tool.
+- Keep hidden reasoning as short as possible; it consumes the output budget. Plan mentally in seconds, then act.
+- When the user needs vendor icons or brand logos, call search_shapes / ai_icon FIRST (one batched call), then emit exactly ONE display_diagram or edit_diagram call.
+- After emitting a tool call, stop and let the tool run. Do not duplicate tool calls.
 
 Use tools only:
 - display_diagram: create or fully replace the diagram.
@@ -290,7 +293,7 @@ IMPORTANT: Keep edits concise:
               execute: async ({ brands, size }) => {
                   const lines: string[] = [];
                   for (const brand of brands) {
-                      const results = searchAiIcons(brand, size || 48, 2);
+                      const results = await searchAiIcons(brand, size || 48, 2);
                       lines.push(
                           results.length > 0
                               ? results
