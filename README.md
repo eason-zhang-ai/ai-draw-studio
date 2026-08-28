@@ -1,11 +1,16 @@
-# AI 智能绘图
+# AI 智能绘图（ai-draw-studio）
 
 [English](README_en.md) | 中文
 
-一个基于 Next.js 构建的智能绘图应用程序，利用 AI 的强大功能创建和操作各种类型的图表，包括 Draw.io (diagrams.net)、Mermaid、PlantUML、Excalidraw，以及通过自然语言命令支持 20 多种其他图表格式。
+> **本项目是 [shenpeiheng/ai-smart-draw](https://github.com/shenpeiheng/ai-smart-draw)（MIT）的 fork**，在此基础上做了以下增强：
+>
+> - **DeepSeek V4 系列模型支持**：`deepseek-v4-flash`（快速）、`deepseek-v4-pro`（强力）、`deepseek-v4-flash-vision-exp`（视觉），支持自定义 API 端点（OpenAI 兼容），多配置管理 + 能力路由（含图片的请求自动切到视觉模型）。
+> - **注入 [Agents365-ai/drawio-skill](https://github.com/Agents365-ai/drawio-skill)（MIT）内容资产**：`skills/drawio-skill/` 的 XML 规范 / 图表类型预设 / 样式速查随请求注入模型上下文；`search_shapes`（10,446 个官方形状精确 style）与 `ai_icon`（AI/LLM 品牌 logo）两个服务端工具，杜绝"猜 shape 变空白框"。
+> - **视觉开关**：配置视觉模型后启用图片上传/粘贴，未配置时自动禁用。
+>
+> 上游在线演示：https://ai-smart-draw.vercel.app/
 
-🔗 **在线演示**:
-- https://ai-smart-draw.vercel.app/
+一个基于 Next.js 构建的智能绘图应用程序，利用 AI 的强大功能创建和操作各种类型的图表，包括 Draw.io (diagrams.net)、Mermaid、PlantUML、Excalidraw，以及通过自然语言命令支持 20 多种其他图表格式。
 
 ![de5e647f-a83a-4b28-bd56-b449f587e472.png](public/de5e647f-a83a-4b28-bd56-b449f587e472.png)
 ![01669c29-60a7-4777-af14-0982d6c6daa8.png](public/01669c29-60a7-4777-af14-0982d6c6daa8.png)

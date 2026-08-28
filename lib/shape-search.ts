@@ -103,6 +103,18 @@ export function searchShapes(query: string, limit = 6): ShapeResult[] {
     }));
 }
 
+/** Batch lookup of several shape keywords in a single call (one tool round). */
+export function searchShapesBatch(
+    queries: string[],
+    perQuery = 3
+): Record<string, ShapeResult[]> {
+    const out: Record<string, ShapeResult[]> = {};
+    for (const query of queries) {
+        out[query] = searchShapes(query, perQuery);
+    }
+    return out;
+}
+
 interface IconsManifest {
     cdn: string;
     icons: string[];

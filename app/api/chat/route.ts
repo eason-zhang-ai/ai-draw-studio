@@ -6,7 +6,7 @@ import {
   getProfessionalDiagramGuidelines,
 } from "@/lib/diagram-prompt-guidelines";
 import { buildDrawioSkillContext } from "@/lib/skill-assets";
-import { searchShapes, searchAiIcons } from "@/lib/shape-search";
+import { searchShapesBatch, searchAiIcons } from "@/lib/shape-search";
 
 export const maxDuration = 90
 const MAX_CONTEXT_MESSAGES = 3;
@@ -40,9 +40,10 @@ Think briefly and then call the appropriate tool directly. Do not spend many tok
 Use tools only:
 - display_diagram: create or fully replace the diagram.
 - edit_diagram: small exact edits to the current XML.
-- search_shapes: look up the exact official draw.io style for a vendor/domain shape (AWS/Azure/GCP/Cisco/Kubernetes/UML/BPMN/ER/network...). NEVER guess a shape=mxgraph.* name — a wrong name renders as a blank box.
+- search_shapes: look up the exact official draw.io style for vendor/domain shapes (AWS/Azure/GCP/Cisco/Kubernetes/UML/BPMN/ER/network...). NEVER guess a shape=mxgraph.* name — a wrong name renders as a blank box. Look up every shape you need in ONE batched call (queries array), then never call it again in this turn.
 - ai_icon: look up an AI/LLM or data-store brand logo style (OpenAI, Claude, DeepSeek, Redis, Postgres...). draw.io has no built-in AI logos.
 - Never return raw XML as normal text.
+- Minimize tool round-trips: plan which shapes/logos you need up front, batch them into ONE search_shapes / ai_icon call, then emit ONE display_diagram or edit_diagram call.
 
 Draw.io XML rules:
 - Return a complete <mxGraphModel><root>...</root></mxGraphModel> document through display_diagram.
@@ -245,33 +246,48 @@ IMPORTANT: Keep edits concise:
               })
           },
           search_shapes: {
-              description: `Search the 10,000+ official draw.io shape library for the exact style string of a vendor/domain shape (AWS/Azure/GCP/Cisco/Kubernetes/UML/BPMN/ER/network/electrical/P&ID...). ALWAYS use this instead of guessing a shape=mxgraph.* name — a wrong name renders as a blank box. Returns entries with title, size and the exact style string.`,
+              description: `Search the 10,000+ official draw.io shape library for the exact style string of vendor/domain shapes (AWS/Azure/GCP/Cisco/Kubernetes/UML/BPMN/ER/network/electrical/P&ID...). ALWAYS use this instead of guessing a shape=mxgraph.* name — a wrong name renders as a blank box. IMPORTANT: look up ALL shapes you need in ONE call by passing every keyword as a queries array item (each extra call costs a full round-trip). Returns entries with title, size and the exact style string.`,
               inputSchema: z.object({
-                  query: z.string().describe("search keywords, e.g. 'aws lambda' or 'kubernetes pod'"),
-                  limit: z.number().optional().describe("max results, default 6"),
+                  queries: z.array(z.string()).describe("all shape keywords to look up at once, e.g. ['aws lambda', 'aws api gateway', 'aws s3']"),
+                  limit: z.number().optional().describe("max results per query, default 3"),
               }),
-              execute: async ({ query, limit }) => {
-                  const results = searchShapes(query, limit || 6);
-                  return results.length > 0
-                      ? results
-                            .map((r) => `${r.title} (${r.w}x${r.h})\nstyle: ${r.style}`)
-                            .join("\n\n")
-                      : `No shape found for "${query}" — retry with fewer or more generic keywords.`;
+              execute: async ({ queries, limit }) => {
+                  const byQuery = searchShapesBatch(queries, limit || 3);
+                  const lines: string[] = [];
+                  for (const [q, results] of Object.entries(byQuery)) {
+                      if (results.length === 0) {
+                          lines.push(`"${q}": no match — retry with fewer/more generic keywords`);
+                          continue;
+                      }
+                      lines.push(
+                          `"${q}":\n` +
+                              results
+                                  .map((r) => `  ${r.title} (${r.w}x${r.h})\n  style: ${r.style}`)
+                                  .join("\n")
+                      );
+                  }
+                  return lines.join("\n\n");
               },
           },
           ai_icon: {
-              description: `Look up an AI/LLM or data-store brand logo (OpenAI, Claude, Gemini, DeepSeek, Qwen, LangChain, Redis, Postgres, MongoDB, Kafka...) as a draw.io image style. draw.io has no built-in AI logos — use this tool instead of drawing a plain box.`,
+              description: `Look up AI/LLM or data-store brand logos (OpenAI, Claude, Gemini, DeepSeek, Qwen, LangChain, Redis, Postgres, MongoDB, Kafka...) as draw.io image styles. draw.io has no built-in AI logos — use this tool instead of drawing a plain box. Look up ALL brands you need in ONE call via the brands array.`,
               inputSchema: z.object({
-                  brand: z.string().describe("brand name, e.g. 'openai' or 'redis'"),
+                  brands: z.array(z.string()).describe("all brand names to look up at once, e.g. ['openai', 'redis']"),
                   size: z.number().optional().describe("cell size in px, default 48"),
               }),
-              execute: async ({ brand, size }) => {
-                  const results = searchAiIcons(brand, size || 48, 3);
-                  return results.length > 0
-                      ? results
-                            .map((r) => `${r.brand} (${r.file})\nstyle: ${r.style}`)
-                            .join("\n\n")
-                      : `No logo found for "${brand}" — consider a generic shape via search_shapes instead.`;
+              execute: async ({ brands, size }) => {
+                  const lines: string[] = [];
+                  for (const brand of brands) {
+                      const results = searchAiIcons(brand, size || 48, 2);
+                      lines.push(
+                          results.length > 0
+                              ? results
+                                    .map((r) => `${r.brand} (${r.file})\nstyle: ${r.style}`)
+                                    .join("\n")
+                              : `"${brand}": no logo — consider a generic shape via search_shapes instead`
+                      );
+                  }
+                  return lines.join("\n\n");
               },
           },
       },
