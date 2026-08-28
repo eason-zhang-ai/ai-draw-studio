@@ -348,12 +348,54 @@ export default function ChatPanel() {
                 // Format the XML to ensure consistency
                 chartXml = formatXML(chartXml);
 
+                // Import code/config files (SQL/Terraform/OpenAPI/Python/JS)
+                // through the deterministic importers BEFORE sending the
+                // prompt — the imported diagram lands on the canvas and the
+                // model sees it as the current-diagram context.
+                const codeFiles = files.filter(
+                    (f) => !f.type.startsWith("image/")
+                );
+                const importNotes: string[] = [];
+                for (const file of codeFiles) {
+                    try {
+                        const content = await file.text();
+                        const res = await fetch("/api/import", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                content,
+                                filename: file.name,
+                            }),
+                        });
+                        const data = await res.json();
+                        if (res.ok && data.xml) {
+                            onDisplayChart(data.xml);
+                            importNotes.push(
+                                `✅ 已导入 ${file.name}（${data.label}）`
+                            );
+                        } else {
+                            importNotes.push(
+                                `❌ ${file.name} 导入失败：${data?.error || res.status}`
+                            );
+                        }
+                    } catch (error) {
+                        importNotes.push(
+                            `❌ ${file.name} 导入失败：${error instanceof Error ? error.message : String(error)}`
+                        );
+                    }
+                }
+
                 // Create message parts
-                const parts: any[] = [{ type: "text", text: input }];
+                const textWithNotes =
+                    importNotes.length > 0
+                        ? `${input}\n\n[文件导入结果]\n${importNotes.join("\n")}`
+                        : input;
+                const parts: any[] = [{ type: "text", text: textWithNotes }];
 
                 // Add file parts if files exist
                 if (files.length > 0) {
                     for (const file of files) {
+                        if (!file.type.startsWith("image/")) continue;
                         const reader = new FileReader();
                         const dataUrl = await new Promise<string>((resolve) => {
                             reader.onload = () =>

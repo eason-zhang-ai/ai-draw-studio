@@ -217,11 +217,11 @@ export function ChatInput({
                         variant="outline"
                         size="icon"
                         onClick={triggerFileInput}
-                        disabled={isBusy || !visionEnabled}
+                        disabled={isBusy}
                         title={
                             visionEnabled
-                                ? "Upload reference image"
-                                : "未配置视觉模型，无法上传图片（在模型设置中配置）"
+                                ? "上传参考图片或代码/SQL/Terraform/OpenAPI 文件"
+                                : "上传代码/SQL/Terraform/OpenAPI 文件（图片需先配置视觉模型）"
                         }
                     >
                         <ImageIcon className="h-4 w-4" />
@@ -232,9 +232,9 @@ export function ChatInput({
                         ref={fileInputRef}
                         className="hidden"
                         onChange={handleFileChange}
-                        accept="image/*"
+                        accept="image/*,.sql,.tf,.yaml,.yml,.json,.py,.js,.ts,.jsx,.tsx"
                         multiple
-                        disabled={isBusy || !visionEnabled}
+                        disabled={isBusy}
                     />
                 </div>
 

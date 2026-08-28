@@ -43,7 +43,7 @@ def call_once(image_path: str, question: str) -> str:
                 ],
             }
         ],
-        "max_tokens": 800,
+        "max_tokens": 3000,
     }
     req = urllib.request.Request(
         f"{BASE_URL}/chat/completions",
