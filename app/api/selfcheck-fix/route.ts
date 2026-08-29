@@ -33,7 +33,7 @@ Rules:
 - if an issue cannot be fixed safely, skip it`;
 
         let text = "";
-        for (let attempt = 0; attempt < 3 && !text.trim(); attempt++) {
+        for (let attempt = 0; attempt < 2 && !text.trim(); attempt++) {
             const result = await generateText({
                 model: client.chat(model),
                 system,
@@ -56,7 +56,7 @@ ${xml}
 Output the JSON array of search/replace edits now.`,
                     },
                 ],
-                maxOutputTokens: 8000,
+                maxOutputTokens: 4000,
                 temperature: 0,
             });
             text = result.text || "";
