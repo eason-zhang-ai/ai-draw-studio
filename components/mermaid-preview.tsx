@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ZoomIn, ZoomOut, RefreshCcw, Download, Grid3X3, PenTool } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { sanitizeMermaid } from "@/lib/mermaid-sanitize";
 
 const RENDER_DEBOUNCE_MS = 180;
 let mermaidModulePromise: Promise<any> | null = null;
@@ -83,9 +84,12 @@ export function MermaidPreview({
                 theme: "neutral",
                 look: handDrawn ? "handDrawn" : "classic",
             });
-            
+
+            // Rename reserved-keyword class names (e.g. `end`) before rendering.
+            const sanitized = sanitizeMermaid(definition);
+
             mermaidAPI
-                .render(diagramId, definition)
+                .render(diagramId, sanitized)
                 .then(({ svg }: { svg: string }) => {
                     if (!cancelled) {
                         setSvg(svg);

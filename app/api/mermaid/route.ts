@@ -35,6 +35,7 @@ Mermaid excellence rules:
 - For dense relationships, introduce aggregator nodes such as Gateway, Event Bus, Queue, or Shared Interface instead of connecting every node to every other node.
 - Use Mermaid link variants intentionally: reserve thick/solid arrows for primary flow, dotted arrows for secondary/optional dependencies, and avoid long diagonal-looking cross-subgraph links when a hub node would be clearer.
 - Quote labels that contain punctuation, parentheses, slashes, or non-trivial text to avoid parse errors.
+- NEVER use the reserved word "end" as a node id, class name, or classDef name (e.g. avoid :::end / classDef end). Use "finish" / "terminal" / "done" instead — "end" terminates subgraphs and breaks parsing.
 - Use classDef/class assignments sparingly to create consistent visual hierarchy without making the code noisy.
 - Avoid unsupported syntax for the likely Mermaid renderer; favor broadly compatible Mermaid constructs.
 - Validate mentally that every edge references an existing node and every subgraph is closed.
