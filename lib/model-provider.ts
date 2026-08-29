@@ -1,4 +1,5 @@
 import { createOpenAI } from "@ai-sdk/openai";
+import { createBufferedFetch } from "@/lib/buffered-fetch";
 import {
     DEFAULT_BASE_URL,
     DEFAULT_MODEL,
@@ -61,7 +62,16 @@ export function resolveModel(
     // gateway validates tool-call ids against its own records — fabricated
     // ids fail with a misleading "reasoning_content must be passed back"
     // error, which was tracked down via scripts/repro-tools.ts.
-    const client = createOpenAI({ apiKey, baseURL: baseUrl, name: "openai" });
+    //
+    // A buffered fetch forces non-streaming upstream (the endpoint's
+    // streaming mode degenerates the reasoning model) and replays the full
+    // response as SSE so streamText still works.
+    const client = createOpenAI({
+        apiKey,
+        baseURL: baseUrl,
+        name: "openai",
+        fetch: createBufferedFetch(),
+    });
     return { client, model, maxOutputTokens };
 }
 
