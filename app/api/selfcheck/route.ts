@@ -23,30 +23,35 @@ Respond ONLY with a JSON object in this exact shape:
 If the diagram looks fine, respond with {"issues":[]}.
 Check for: overlapping shapes, clipped/truncated labels, arrows that miss their target, edges crossing through unrelated shapes, off-canvas elements, stacked parallel edges, and edge labels overlapping shapes.`;
 
-        const result = await generateText({
-            model: client.chat(model),
-            system,
-            messages: [
-                {
-                    role: "user",
-                    content: [
-                        {
-                            type: "image",
-                            image: dataUrl,
-                        },
-                        {
-                            type: "text",
-                            text: "检查这张图。不要输出任何解释，只输出 JSON。",
-                        },
-                    ],
-                },
-            ],
-            maxOutputTokens: 2000,
-            temperature: 0,
-        });
+        // The vision model occasionally returns empty (reasoning eats the
+        // budget); retry a few times for a usable answer.
+        let text = "";
+        for (let attempt = 0; attempt < 3 && !text.trim(); attempt++) {
+            const result = await generateText({
+                model: client.chat(model),
+                system,
+                messages: [
+                    {
+                        role: "user",
+                        content: [
+                            {
+                                type: "image",
+                                image: dataUrl,
+                            },
+                            {
+                                type: "text",
+                                text: "检查这张图。不要输出任何解释，只输出 JSON。",
+                            },
+                        ],
+                    },
+                ],
+                maxOutputTokens: 2000,
+                temperature: 0,
+            });
+            text = result.text || "";
+        }
 
         // Tolerant JSON extraction: find the first {...} block.
-        const text = result.text || "";
         const start = text.indexOf("{");
         const end = text.lastIndexOf("}");
         let issues: unknown[] = [];

@@ -219,7 +219,7 @@ export default function ChatPanel() {
                         autoRetryCountRef.current += 1;
                         appendNotice(
                             setMessages,
-                            `⚠️ 本次生成出现异常（超长推理无输出），正在自动重试（${autoRetryCountRef.current}/${MAX_AUTO_RETRIES}）…`
+                            `⏳ 模型深度思考耗时过长，正在自动重试（${autoRetryCountRef.current}/${MAX_AUTO_RETRIES}）…`
                         );
                         sendMessage(
                             { parts: lastSubmitRef.current.parts },
@@ -230,7 +230,7 @@ export default function ChatPanel() {
                         lastSubmitRef.current = null;
                         appendNotice(
                             setMessages,
-                            "❌ 自动重试仍无输出，请重新发送或切换模型。"
+                            "❌ 多次尝试仍未返回结果，请重新发送或切换模型。"
                         );
                     }
                 } else {

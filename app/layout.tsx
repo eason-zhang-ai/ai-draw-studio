@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Analytics } from "@vercel/analytics/react";
 import { DiagramProvider } from "@/contexts/diagram-context";
 import { ModelConfigProvider } from "@/contexts/model-config-context";
 import "@excalidraw/excalidraw/index.css";
@@ -24,8 +23,6 @@ export default function RootLayout({
                         {children}
                     </ModelConfigProvider>
                 </DiagramProvider>
-
-                <Analytics />
             </body>
         </html>
     );
