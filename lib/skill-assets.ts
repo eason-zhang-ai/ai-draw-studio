@@ -113,67 +113,67 @@ const DIAGRAM_TYPE_SECTIONS: { keywords: string[]; sections: string[] }[] = [
     },
 ];
 
-const SHAPESEARCH_PYTHON_HINT =
-    /Run `python3 <this-skill-dir>\/scripts\/shapesearch\.py "<keywords>"` to get the exact official style \+ size, or see `references\/shapes\.md` for the hand-writable cheatsheet\. For \*\*AI\/LLM brand logos\*\* \([^)]*\), which draw\.io has none of, use `python3 <this-skill-dir>\/scripts\/aiicons\.py "<brand>"`\./;
-
 /**
- * Build the drawio-skill context for a request:
- * - the full xml-authoring reference (skeleton/cells/containers/edges/palette/layout),
- *   with Python script hints rewritten to point at the search_shapes / ai_icon tools;
- * - sections of diagram-types.md matched by the user's request keywords;
- * - the hand-writable style cheat sheet from shapes.md, if budget allows.
+ * Compact draw.io authoring reference.
+ *
+ * The full 13KB xml-authoring guide makes the reasoning model degenerate
+ * (7 tools + full context = 1/5 tool calls; 7 tools + no context = 5/5,
+ * measured on the same prompt). Keep the essentials as a short hint and
+ * let the search_shapes / ai_icon / layout_diagram tools cover the rest.
  */
+const COMPACT_DRAWIO_REF = `## draw.io XML essentials
+- Document: <mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/> ...user cells... </root></mxGraphModel>
+- Every mxCell must be a DIRECT child of <root> (never nested). Unique ids from "2". Top-level cells use parent="1".
+- Vertex: <mxCell id="2" value="Label" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1"><mxGeometry x=".." y=".." width=".." height=".." as="geometry"/></mxCell>
+- Edge must carry a <mxGeometry relative="1" as="geometry"/> child (self-closing edges do NOT render): <mxCell id=".." style="edgeStyle=orthogonalEdgeStyle;rounded=1;endArrow=classic;" edge="1" parent="1" source=".." target="..">...</mxCell>
+- Escape & < > " in values; multi-line labels use &#xa;.
+- Shape keywords: rounded=1 (rounded rect/service), ellipse (start/end/oval), rhombus (decision), shape=cylinder3 (database), swimlane (titled container).
+- Keep everything in one viewport (x 0-900, y 0-650); align peer nodes; consistent sizes; no overlaps; labels short.
+- Palette (fill/stroke): blue #dae8fc/#6c8ebf, green #d5e8d4/#82b366, yellow #fff2cc/#d6b656, orange #ffe6cc/#d79b00, red #f8cecc/#b85450, purple #e1d5e7/#9673a6.
+- For vendor/AI logos, use search_shapes / ai_icon — never guess a shape=mxgraph.* name.
+- For large graphs (15+ nodes), use layout_diagram (structural nodes+edges) instead of hand-placing coordinates.`;
+
+/** One-line diagram-type hints (kept tiny to avoid reasoning blow-up). */
+const COMPACT_TYPE_HINTS: { keywords: string[]; hint: string }[] = [
+    {
+        keywords: ["架构", "architecture", "微服务", "系统", "部署"],
+        hint: "架构图：分层（客户端/接入/服务/数据），同层水平、跨层垂直，服务用圆角矩形、数据库用圆柱。",
+    },
+    {
+        keywords: ["流程图", "flowchart", "流程", "工作流", "审批"],
+        hint: "流程图：开始/结束用椭圆，处理用圆角矩形，判断用菱形，主流程竖直。",
+    },
+    {
+        keywords: ["序列", "时序", "sequence", "交互"],
+        hint: "时序图：参与者顶部横向排列，生命线向下，消息用箭头按时间排序。",
+    },
+    {
+        keywords: ["er", "实体", "数据库", "schema", "表"],
+        hint: "ER 图：实体用矩形（或 swimlane 列字段），主键/外键标注，关系用连线。",
+    },
+    {
+        keywords: ["uml", "类图", "class diagram"],
+        hint: "类图：类用三格矩形（名/属性/方法），继承用空心三角箭头。",
+    },
+    {
+        keywords: ["泳道", "swimlane", "跨职能"],
+        hint: "泳道图：每个角色一条泳道（swimlane），活动横向排列，交接跨泳道。",
+    },
+];
+
 export function buildDrawioSkillContext(userText: string, budget = 18000): string {
-    const parts: string[] = [];
+    void budget;
+    const lower = userText.toLowerCase();
+    const hints = COMPACT_TYPE_HINTS.filter((entry) =>
+        entry.keywords.some((k) => lower.includes(k))
+    )
+        .slice(0, 2)
+        .map((entry) => entry.hint);
 
-    let xmlAuthoring = loadReference("xml-authoring.md") || "";
-    if (xmlAuthoring) {
-        xmlAuthoring = xmlAuthoring.replace(
-            SHAPESEARCH_PYTHON_HINT,
-            "Use the `search_shapes` tool with your keywords to get the exact official style + size. For **AI/LLM brand logos** (OpenAI, Claude, Gemini, …), which draw.io has none of, use the `ai_icon` tool with the brand name."
-        );
-        parts.push(xmlAuthoring);
+    if (hints.length > 0) {
+        return `${COMPACT_DRAWIO_REF}\n\n## Diagram type hints\n${hints
+            .map((h) => `- ${h}`)
+            .join("\n")}`;
     }
-
-    const diagramTypes = loadReference("diagram-types.md");
-    if (diagramTypes) {
-        const text = userText.toLowerCase();
-        const matched = DIAGRAM_TYPE_SECTIONS.filter((entry) =>
-            entry.keywords.some((k) => text.includes(k))
-        )
-            .slice(0, 2)
-            .flatMap((entry) => entry.sections);
-        if (matched.length > 0) {
-            parts.push(
-                "## Diagram type presets (from drawio-skill)\n\n" +
-                    extractSections(diagramTypes, matched)
-            );
-        }
-    }
-
-    const shapes = loadReference("shapes.md");
-    if (shapes) {
-        parts.push(
-            "## Hand-writable style cheatsheet\n\n" +
-                extractSections(shapes, [
-                    "Cheatsheet — hand-writable styles",
-                    "Common shapes (`shape=` keyword)",
-                    "UML primitives",
-                    "Containers (parent-child; children use relative coords)",
-                    "Edges",
-                    "Useful property knobs",
-                ])
-        );
-    }
-
-    // Budget-trim: keep parts in priority order while under the byte budget.
-    // The first part is always kept (even if it alone exceeds the budget).
-    const kept: string[] = [];
-    let used = 0;
-    for (const part of parts) {
-        if (used > 0 && used + part.length > budget) break;
-        kept.push(part);
-        used += part.length;
-    }
-    return kept.join("\n\n");
+    return COMPACT_DRAWIO_REF;
 }
