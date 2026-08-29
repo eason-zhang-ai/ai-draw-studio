@@ -195,7 +195,7 @@ export default function ChatPanel() {
     // finishes with no text and no tool calls, resend the last input once.
     const lastSubmitRef = useRef<{ parts: any[]; body: any } | null>(null);
     const autoRetryCountRef = useRef(0);
-    const MAX_AUTO_RETRIES = 2;
+    const MAX_AUTO_RETRIES = 3;
     // C4 multi-page documents can be overwritten by a follow-up
     // display_diagram in the same turn; keep the XML to restore it when
     // this turn did NOT emit a display_diagram.

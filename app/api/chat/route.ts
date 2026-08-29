@@ -9,9 +9,11 @@ import { searchShapesBatch, searchAiIcons } from "@/lib/shape-search";
 
 export const maxDuration = 90
 const MAX_CONTEXT_MESSAGES = 3;
-// 16k bounds worst-case cost/latency when a reasoning model degenerates into
-// a long thinking loop; diagrams rarely need more than this.
-const DEFAULT_MAX_OUTPUT_TOKENS = 16000;
+// 8k bounds worst-case cost/latency when a reasoning model degenerates into
+// a long thinking loop (each degenerate attempt burns the full budget);
+// most diagrams fit well under this. The model config dialog can raise it
+// per request for extra-large diagrams.
+const DEFAULT_MAX_OUTPUT_TOKENS = 8000;
 const MAX_OUTPUT_TOKENS = 32000;
 const MAX_XML_CONTEXT_CHARS = 4000;
 
