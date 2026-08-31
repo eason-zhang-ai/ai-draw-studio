@@ -236,4 +236,4 @@ skills/               # vendor 的 Agents365-ai 图表 skill 家族（MIT）
 
 ## ⭐ 星标历史
 
-[![Star History Chart](https://api.star-history.com/svg?repos=shenpeiheng/ai-smart-draw&type=date&legend=top-left)](https://www.star-history.com/#shenpeiheng/ai-smart-draw&type=date&legend=top-left)
+[![Star History Chart](https://api.star-history.com/svg?repos=eason-zhang-ai%2Fai-draw-studio&type=date&legend=top-left)](https://www.star-history.com/?repos=eason-zhang-ai%2Fai-draw-studio&type=date&legend=top-left)
