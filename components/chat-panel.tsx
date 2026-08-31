@@ -519,10 +519,14 @@ export default function ChatPanel() {
     return (
         <Card className="h-full flex flex-col rounded-none py-0 gap-0 overflow-hidden">
             <CardHeader className="p-4 flex flex-col gap-2">
-                <div className="flex items-center justify-between gap-2">
-                    <div className="flex gap-2 items-center">
-                        <ModeSelector active="drawio" />
-                    </div>
+                {/* Row 1: mode selector (top-left). The top-right corner is
+                    reserved for the floating 默认配置/GitHub/关闭 buttons. */}
+                <div className="flex items-center justify-between">
+                    <ModeSelector active="drawio" />
+                </div>
+                {/* Row 2: self-check toggle, on its own row below so it never
+                    sits under the floating buttons. */}
+                <div className="flex items-center">
                     <button
                         type="button"
                         onClick={toggleSelfCheck}

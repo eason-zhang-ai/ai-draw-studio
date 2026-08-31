@@ -4,12 +4,10 @@ import {Buffer} from "node:buffer";
 import {NextRequest, NextResponse} from "next/server";
 
 // Kroki renderers to try in order. kroki.io is the public default; a
-// custom KROKI_RENDER_BASE can override/prefix it. The old hardcoded
-// internal host (vg.007988.xyz:8000) is kept last as a fallback.
+// custom KROKI_RENDER_BASE can override/prefix it.
 const DEFAULT_RENDERERS = [
     process.env.KROKI_RENDER_BASE?.replace(/\/$/, ""),
     "https://kroki.io",
-    "http://vg.007988.xyz:8000",
 ].filter(Boolean) as string[];
 
 // Supported diagram types and their endpoints

@@ -7,7 +7,6 @@ import { encode } from "plantuml-encoder";
 const DEFAULT_RENDERERS = [
     process.env.PLANTUML_RENDER_BASE?.replace(/\/$/, ""),
     "https://www.plantuml.com/plantuml/svg",
-    "http://vg.007988.xyz:8000/plantuml/svg",
     "https://kroki.io/plantuml/svg",
 ].filter((value): value is string => Boolean(value && value.trim().length > 0));
 

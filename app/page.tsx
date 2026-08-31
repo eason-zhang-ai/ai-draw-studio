@@ -183,12 +183,13 @@ export default function Home() {
     return (
         <div className="flex h-screen bg-gray-100 overflow-hidden">
             <div className={`h-full p-1 transition-all duration-300 ${isChatCollapsed ? 'w-full' : 'w-3/4'}`}>
-                <div className="h-full flex flex-col relative">
-                    {/* Import/Export buttons overlayed on top of Draw.io, positioned to look like part of the toolbar */}
+                <div className="h-full flex flex-col">
+                    {/* Toolbar bar — rendered ABOVE the Draw.io editor so it
+                        never overlaps the editor's own buttons. */}
                     {isDrawIoLoaded && (
-                        <div className="absolute top-2.5 right-20 z-10 flex gap-2 animate-in fade-in duration-300">
+                        <div className="flex items-center gap-2 px-2 py-1.5 border-b bg-white shrink-0">
                             <select
-                                className="h-7.5 rounded-[4px] border border-[#b8d4e8] bg-[#c2e7ff] px-1.5 text-[#3F3F3F] shadow-sm hover:bg-[#abcfe7]/90"
+                                className="h-8 rounded-[4px] border border-[#b8d4e8] bg-[#c2e7ff] px-1.5 text-[#3F3F3F] shadow-sm hover:bg-[#abcfe7]/90"
                                 style={{ fontSize: "14px", fontWeight: 550 }}
                                 title="应用样式预设（暗色/企业/手绘/色盲安全）"
                                 defaultValue=""
@@ -214,23 +215,18 @@ export default function Home() {
                                 variant="secondary" 
                                 size="sm" 
                                 disabled={layoutBusy}
-                                className="h-7.5 bg-[#c2e7ff] hover:bg-[#abcfe7]/90 text-[#3F3F3F] shadow-sm rounded-[4px]"
+                                className="h-8 bg-[#c2e7ff] hover:bg-[#abcfe7]/90 text-[#3F3F3F] shadow-sm rounded-[4px]"
                                 title="用 Graphviz 重新自动布局当前图表"
                                 style={{ fontSize: '14px', fontWeight: 550}}
                             >
                                 <LayoutGrid className="h-3 w-3 mr-1" />
                                 <span className="text-xs" style={{ fontSize: '14px' }}>自动布局</span>
                             </Button>
-                            {layoutNotice && (
-                                <div className="absolute top-10 right-0 z-20 rounded-md bg-black/80 px-3 py-1.5 text-xs text-white shadow">
-                                    {layoutNotice}
-                                </div>
-                            )}
                             <Button 
                                 onClick={triggerFileInput} 
                                 variant="secondary" 
                                 size="sm" 
-                                className="h-7.5 bg-[#c2e7ff] hover:bg-[#abcfe7]/90 text-[#3F3F3F] shadow-sm rounded-[4px]"
+                                className="h-8 bg-[#c2e7ff] hover:bg-[#abcfe7]/90 text-[#3F3F3F] shadow-sm rounded-[4px]"
                                 title="Import .drawio file"
                                 style={{ fontSize: '14px', fontWeight: 550}}
                             >
@@ -241,13 +237,18 @@ export default function Home() {
                                 onClick={exportDiagramFile} 
                                 variant="secondary" 
                                 size="sm" 
-                                className="h-7.5 bg-[#c2e7ff] hover:bg-[#abcfe7]/90 text-[#3F3F3F] shadow-sm rounded-[4px]"
+                                className="h-8 bg-[#c2e7ff] hover:bg-[#abcfe7]/90 text-[#3F3F3F] shadow-sm rounded-[4px]"
                                 title="Export as .drawio file"
                                 style={{ fontSize: '14px', fontWeight: 550}}
                             >
                                 <Download className="h-3 w-3 mr-1" />
                                 <span className="text-xs" style={{ fontSize: '14px' }}>导出</span>
                             </Button>
+                            {layoutNotice && (
+                                <span className="ml-auto rounded-md bg-black/80 px-3 py-1 text-xs text-white shadow">
+                                    {layoutNotice}
+                                </span>
+                            )}
                         </div>
                     )}
                     
@@ -261,7 +262,7 @@ export default function Home() {
                     />
                     
                     {/* Draw.io editor */}
-                    <div className="flex-1">
+                    <div className="flex-1 min-h-0 relative">
                         <DrawIoEmbed
                             ref={drawioRef}
                             onLoad={handleDrawioLoad}
