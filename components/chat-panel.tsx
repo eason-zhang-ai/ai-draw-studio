@@ -111,15 +111,14 @@ export default function ChatPanel() {
                     body: JSON.stringify({ xml, issues, modelConfig }),
                 });
                 const fixData = await fixRes.json();
-                const edits: { search: string; replace: string }[] =
-                    fixRes.ok && Array.isArray(fixData.edits)
-                        ? fixData.edits
-                        : [];
-                if (edits.length > 0) {
-                    const { replaceXMLParts } = await import("@/lib/utils");
-                    xml = replaceXMLParts(xml, edits);
+                const directiveCount: number =
+                    fixRes.ok && typeof fixData.directives === "number"
+                        ? fixData.directives
+                        : 0;
+                if (fixRes.ok && fixData.xml && directiveCount > 0) {
+                    xml = fixData.xml;
                     onDisplayChart(xml);
-                    fixedCount += edits.length;
+                    fixedCount += directiveCount;
                 } else {
                     break;
                 }

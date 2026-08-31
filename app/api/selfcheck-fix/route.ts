@@ -1,62 +1,54 @@
 import { generateText } from "ai";
 import { resolveModel } from "@/lib/model-provider";
+import { buildCatalog, applyDirectives } from "@/lib/xml-edit";
 
 export const maxDuration = 120;
 
 /**
  * Self-check fixer: given the current diagram XML and a list of issues
- * from the vision model, ask the text model for targeted search/replace
- * edit pairs (preserves layout; never full regeneration).
+ * from the vision model, ask the text model for layout fix directives and
+ * apply them deterministically by cell id.
  *
- * The endpoint runs in "thinking mode" which rejects forced tool_choice,
- * so the edits are requested as a strict JSON array in plain text and
- * extracted tolerantly.
+ * The model reliably emits id-based directives (move/nudge/relabel/restyle/
+ * delete) when given a COMPACT catalog, but degenerates into empty output
+ * when asked for exact search/replace strings on the full XML — so we never
+ * ask it to write raw XML.
  */
 export async function POST(req: Request) {
     try {
         const { xml, issues, modelConfig } = await req.json();
         if (!xml || !Array.isArray(issues) || issues.length === 0) {
-            return Response.json({ edits: [] });
+            return Response.json({ xml });
         }
 
         const { client, model } = resolveModel(modelConfig);
 
-        const system = `You are a draw.io XML repair assistant. Fix ONLY the issues listed, with minimal
-exact search/replace edits on the current XML. Preserve all ids, unrelated
-geometry and styles. Output STRICTLY a JSON array and nothing else:
+        const catalog = buildCatalog(xml);
 
-[{"search":"<exact original lines>","replace":"<replacement lines>"}]
+        const system = `You are a diagram layout fixer. Given a list of issues (referenced by node/edge label) and a catalog of cells (id, kind, label, x, y), output ONLY a JSON array of fix directives.
+Allowed actions: move (x,y), nudge (dx,dy), relabel (value), restyle (style), delete.
+Example: [{"id":"3","action":"move","x":300,"y":200}]. Keep coordinates on a 10px grid, within x 0-900 / y 0-650.`;
 
-Rules:
-- each "search" must match a contiguous block of the current XML EXACTLY (complete lines)
-- one edit pair per issue; merge adjacent changes into one pair
-- if an issue cannot be fixed safely, skip it`;
-
-        let text = "";
-        for (let attempt = 0; attempt < 2 && !text.trim(); attempt++) {
-            const result = await generateText({
-                model: client.chat(model),
-                system,
-                messages: [
-                    {
-                        role: "user",
-                        content: `Issues found by the vision reviewer:
+        const user = `Issues found by the vision reviewer:
 ${issues
     .map(
         (i: any, n: number) =>
-            `${n + 1}. [${i.severity || "medium"}] ${i.location || ""}: ${i.description}`
+            `${n + 1}. [${i.severity || "medium"}] ${i.location || ""}: ${i.description || ""}`
     )
     .join("\n")}
 
-Current diagram XML:
-"""xml
-${xml}
-"""
+Cell catalog:
+${JSON.stringify(catalog)}
 
-Output the JSON array of search/replace edits now.`,
-                    },
-                ],
-                maxOutputTokens: 4000,
+Output the JSON array of fix directives now.`;
+
+        let text = "";
+        for (let attempt = 0; attempt < 3 && !text.trim(); attempt++) {
+            const result = await generateText({
+                model: client.chat(model),
+                system,
+                messages: [{ role: "user", content: user }],
+                maxOutputTokens: 1000,
                 temperature: 0,
             });
             text = result.text || "";
@@ -66,34 +58,35 @@ Output the JSON array of search/replace edits now.`,
         }
 
         // Tolerant extraction: first [ ... ] block, stripped of code fences.
-        text = text.replace(/```(?:json|xml)?/g, "");
+        text = text.replace(/```(?:json)?/g, "");
         const start = text.indexOf("[");
         const end = text.lastIndexOf("]");
-        let edits: { search: string; replace: string }[] = [];
+        let directives: { id: string; action: string }[] = [];
         if (start !== -1 && end > start) {
             try {
                 const parsed = JSON.parse(text.slice(start, end + 1));
                 if (Array.isArray(parsed)) {
-                    edits = parsed.filter(
-                        (e: any) =>
-                            e &&
-                            typeof e.search === "string" &&
-                            typeof e.replace === "string"
+                    directives = parsed.filter(
+                        (d: any) => d && typeof d.id === "string" && typeof d.action === "string"
                     );
                 }
             } catch {
-                edits = [];
+                directives = [];
             }
         }
 
+        const fixedXml = applyDirectives(
+            xml,
+            directives as import("@/lib/xml-edit").FixDirective[]
+        );
+
         console.info("[selfcheck-fix]", {
             model,
-            issues: JSON.stringify(issues),
-            rawLen: text.length,
-            rawText: text.slice(0, 200),
-            edits: edits.length,
+            issues: issues.length,
+            cells: catalog.length,
+            directives: directives.length,
         });
-        return Response.json({ edits });
+        return Response.json({ xml: fixedXml, directives: directives.length });
     } catch (error) {
         console.error("selfcheck-fix route error", error);
         return Response.json(
