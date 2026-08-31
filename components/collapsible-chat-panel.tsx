@@ -110,7 +110,7 @@ export function CollapsibleChatPanel({
             size="sm"
             className="flex items-center gap-2 h-8 px-2"
             title="GitHub shenpeiheng"
-            onClick={() => window.open('https://github.com/shenpeiheng/ai-smart-draw', '_blank')}
+            onClick={() => window.open('https://github.com/eason-zhang-ai/ai-draw-studio', '_blank')}
           >
             <Github className="h-4 w-4" />
             {/*<span className="hidden sm:inline">GitHub</span>*/}
