@@ -76,9 +76,10 @@ export function buildSkillContext(
     const parts: string[] = [];
     const budget = opts.budget ?? 16000;
     let used = 0;
+    // The first part is always kept even if it alone exceeds the budget.
     const push = (text: string) => {
         if (!text) return;
-        if (used + text.length > budget) return;
+        if (used > 0 && used + text.length > budget) return;
         parts.push(text);
         used += text.length;
     };
@@ -165,8 +166,11 @@ export function buildExcalidrawSkillContext(userText: string): string {
 
 export function buildPlantumlSkillContext(userText: string): string {
     void userText;
+    // Keep the concrete syntax reference + themes; skip the CLI/export
+    // workflow sections (they don't apply to a web app and bloat the prompt).
     return buildSkillContext("plantuml-skill", {
-        budget: 12000,
+        skillSections: ["Syntax Reference", "Themes", "Common Mistakes"],
+        budget: 9000,
         stripScriptHints: true,
     });
 }

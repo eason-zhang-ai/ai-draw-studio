@@ -3,8 +3,14 @@
 import {Buffer} from "node:buffer";
 import {NextRequest, NextResponse} from "next/server";
 
-// Default to kroki.io
-const DEFAULT_RENDERER = process.env.KROKI_RENDER_BASE?.replace(/\/$/, "") || "http://vg.007988.xyz:8000";
+// Kroki renderers to try in order. kroki.io is the public default; a
+// custom KROKI_RENDER_BASE can override/prefix it. The old hardcoded
+// internal host (vg.007988.xyz:8000) is kept last as a fallback.
+const DEFAULT_RENDERERS = [
+    process.env.KROKI_RENDER_BASE?.replace(/\/$/, ""),
+    "https://kroki.io",
+    "http://vg.007988.xyz:8000",
+].filter(Boolean) as string[];
 
 // Supported diagram types and their endpoints
 // Reference: https://kroki.io/#support
@@ -153,48 +159,44 @@ export async function POST(request: NextRequest) {
         : detectDiagramType(definition);
 
     const encoded = encodeDiagram(definition);
-    const renderer = DEFAULT_RENDERER;
-    const url = `${renderer}/${finalDiagramType}/svg/${encoded}`;
 
-    try {
-        const response = await fetch(url, {
-            method: 'GET',
-            headers: {
-                'Accept': 'image/svg+xml',
-            },
-            cache: "no-store",
-        });
-
-        if (!response.ok) {
-            return NextResponse.json(
-                {
-                    error: `Kroki service responded with ${response.status} ${response.statusText || ""}`.trim()
+    // Try each renderer in order until one succeeds.
+    let lastError = "No Kroki renderer available";
+    for (const renderer of DEFAULT_RENDERERS) {
+        const url = `${renderer}/${finalDiagramType}/svg/${encoded}`;
+        try {
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'image/svg+xml',
                 },
-                {status: response.status}
-            );
-        }
-
-        const contentType = response.headers.get("content-type") ?? "image/svg+xml";
-        if (!contentType.includes("svg")) {
-            const buffer = Buffer.from(await response.arrayBuffer());
-            const dataUrl = `data:${contentType};base64,${buffer.toString("base64")}`;
-            return NextResponse.json({
-                svgDataUrl: dataUrl,
-                renderer: "kroki.io",
+                cache: "no-store",
             });
-        }
 
-        const svg = await response.text();
-        return NextResponse.json({
-            svg,
-            renderer: "kroki.io",
-        });
-    } catch (error) {
-        return NextResponse.json(
-            {
-                error: error instanceof Error ? error.message : "Unknown error contacting Kroki service."
-            },
-            {status: 502}
-        );
+            if (!response.ok) {
+                lastError = `Kroki service responded with ${response.status} ${response.statusText || ""}`.trim();
+                continue;
+            }
+
+            const contentType = response.headers.get("content-type") ?? "image/svg+xml";
+            if (!contentType.includes("svg")) {
+                const buffer = Buffer.from(await response.arrayBuffer());
+                const dataUrl = `data:${contentType};base64,${buffer.toString("base64")}`;
+                return NextResponse.json({
+                    svgDataUrl: dataUrl,
+                    renderer,
+                });
+            }
+
+            const svg = await response.text();
+            return NextResponse.json({
+                svg,
+                renderer,
+            });
+        } catch (error) {
+            lastError = error instanceof Error ? error.message : "Unknown error contacting Kroki service.";
+        }
     }
+
+    return NextResponse.json({ error: lastError }, { status: 502 });
 }
