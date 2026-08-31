@@ -169,7 +169,60 @@ components/           # React 组件
 contexts/             # React 上下文提供者
 lib/                  # 实用函数和助手
 public/               # 静态资源，包括示例图片
+skills/               # vendor 的 Agents365-ai 图表 skill 家族（MIT）
+  drawio-skill/       # XML 规范 / 脚本 / 形状索引 / 样式预设
+  mermaid-skill/
+  excalidraw-skill/
+  plantuml-skill/
 ```
+
+## ❓ 常见问题（Q&A）
+
+### Q1：`Agents365-ai/drawio-skill` 在本项目中是如何起作用的？
+
+它**不是一个被"运行"的插件或 MCP 服务**，而是两类资产被"搬进"了 Web 应用：
+
+1. **作为提示词知识注入**（`lib/skill-assets.ts`）：`buildDrawioSkillContext()` 返回约 1.5KB 的精简参考（XML 骨架、形状关键字、连线规则、配色、图类型提示），拼进 drawio 聊天路由的系统提示（`app/api/chat/route.ts`）。
+   > 注意：最初注入的是完整 13KB 的 `xml-authoring.md`，但会让 deepseek 推理模型"思考爆炸"（1/5 成功率），故改为 1.5KB 精简版（6/6 成功率）。
+
+2. **作为确定性脚本由后端路由调用**：
+
+| skill 脚本 | 项目实现 | 暴露方式 |
+|---|---|---|
+| `shapesearch.py`（1 万官方形状 style）| TS 重写 `lib/shape-search.ts`，读 `data/shape-index.json.gz` | `search_shapes` 工具 |
+| `aiicons.py`（AI 品牌 logo）| TS 重写，读 `data/lobe-icons.json` | `ai_icon` 工具 |
+| `autolayout.py`（Graphviz 布点）| `python3` 调用 | `layout_diagram` 工具 + 「自动布局」按钮 |
+| `restyle.py`（换主题）| `python3` 调用 | `apply_style` 工具 + 「样式」下拉 |
+| `c4.py`（C4 多页下钻）| `python3` 调用 | `c4_diagram` 工具 |
+| `sqlerd/tfimports/openapiimports/pyimports/jsimports` | `python3` 调用 | 文件上传 → `/api/import` |
+
+3. **集成进模型工具调用**：这些能力注册为 AI SDK tools，模型在对话中可直接调用（例如"画 AWS 架构图用官方图标"会自动调 `search_shapes`）。
+
+**没用的部分**：skill 依赖的 draw.io 桌面 CLI（headless 导出 PNG）被 iframe 浏览器端导出替代，因此本项目**无需安装 draw.io 桌面版**。
+
+### Q2：视觉自检是如何运作的，有什么作用？
+
+这是 drawio-skill「Step 5 Self-Check」的浏览器版——**让模型"看见"自己生成的图，检查并修复布局问题**（生成 XML 的文本模型是"盲"的）。
+
+**流程**（`components/chat-panel.tsx` + `app/api/selfcheck/*`）：
+
+```
+生成完图表(display_diagram)
+  → ① 视觉自检开关开着 & 配了视觉模型？
+       ↓ 是
+  → ② 从画布导出 PNG（contexts/diagram-context.tsx 的 exportPng）
+  → ③ PNG 发给 deepseek-v4-flash-vision-exp（/api/selfcheck）
+       检查：节点重叠 / 标签截断 / 箭头脱靶 / 连线穿节点 / 越界 / 边标签重叠
+       → 返回 JSON 问题清单
+  → ④ 有问题？问题 + 单元格目录发给文本模型（/api/selfcheck-fix）
+       生成 id 级修复指令（move/nudge/relabel/restyle/delete）
+       → lib/xml-edit.ts 确定性应用 → 回到②复查（最多 2 轮）
+  → ⑤ 聊天里反馈：自检通过 / 已自动修复 N 处 / 列出问题清单
+```
+
+**作用**：质量兜底——文本模型靠"脑补"坐标，容易重叠/截断/连线乱；视觉模型用真实渲染图挑错，抓到的是肉眼可见的问题，并尝试自动修复。
+
+**边界**：检测这半段可靠；自动修复这半段受上游模型限制（约 50-67% 成功率，带 3 次重试，失败时降级为列出问题清单供手动修改）。
 
 ## ✅ 待办事项
 
