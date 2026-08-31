@@ -16,6 +16,16 @@ export default function Home() {
     const [layoutBusy, setLayoutBusy] = useState(false);
     const [layoutNotice, setLayoutNotice] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    // Style presets are a "switch", not a stack: every preset is remapped
+    // from the ORIGINAL (pre-restyle) diagram so switching dark -> corporate
+    // is a clean corporate, not corporate-over-dark. Snapshot the base on the
+    // first style operation; reset it whenever a new diagram lands.
+    const styleBaseXmlRef = useRef<string | null>(null);
+
+    useEffect(() => {
+        // New diagram generated/imported -> drop the stale style base.
+        styleBaseXmlRef.current = null;
+    }, [chartXML]);
 
     const runAutoLayout = async () => {
         if (layoutBusy) return;
@@ -57,11 +67,23 @@ export default function Home() {
         setLayoutBusy(true);
         setLayoutNotice(null);
         try {
-            const xml = await exportXml();
+            // Snapshot the original diagram on the first style operation.
+            if (!styleBaseXmlRef.current) {
+                styleBaseXmlRef.current = await exportXml();
+            }
+            // "默认" = restore the original, no remap needed.
+            if (preset === "default") {
+                loadDiagram(styleBaseXmlRef.current);
+                setLayoutNotice("✅ 已恢复默认样式（原始配色）");
+                return;
+            }
+            // Always remap from the ORIGINAL base, not the current (possibly
+            // already-restyled) diagram, so switching presets is a clean
+            // switch rather than a cumulative overlay.
             const res = await fetch("/api/restyle", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ xml, preset }),
+                body: JSON.stringify({ xml: styleBaseXmlRef.current, preset }),
             });
             const data = await res.json();
             if (res.ok && data.xml) {
