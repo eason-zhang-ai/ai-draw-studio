@@ -48,7 +48,7 @@ Output the JSON array of fix directives now.`;
                 model: client.chat(model),
                 system,
                 messages: [{ role: "user", content: user }],
-                maxOutputTokens: 1000,
+                maxOutputTokens: 2000,
                 temperature: 0,
             });
             text = result.text || "";
