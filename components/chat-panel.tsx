@@ -519,14 +519,11 @@ export default function ChatPanel() {
     return (
         <Card className="h-full flex flex-col rounded-none py-0 gap-0 overflow-hidden">
             <CardHeader className="p-4 flex flex-col gap-2">
-                {/* Row 1: mode selector (top-left). The top-right corner is
-                    reserved for the floating 默认配置/GitHub/关闭 buttons. */}
-                <div className="flex items-center justify-between">
+                {/* Mode selector + icon-only self-check toggle on one row (left);
+                    top-right is reserved for the floating config/github/close
+                    buttons — icon-only keeps everything compact enough to fit. */}
+                <div className="flex items-center gap-2">
                     <ModeSelector active="drawio" />
-                </div>
-                {/* Row 2: self-check toggle, on its own row below so it never
-                    sits under the floating buttons. */}
-                <div className="flex items-center">
                     <button
                         type="button"
                         onClick={toggleSelfCheck}
@@ -538,18 +535,17 @@ export default function ChatPanel() {
                                   ? "视觉自检已开启（生成后自动检查布局）"
                                   : "视觉自检已关闭"
                         }
-                        className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors ${
+                        className={`flex items-center justify-center rounded-md border h-8 w-8 transition-colors ${
                             selfCheckEnabled
                                 ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700"
                                 : "border-border bg-muted/40 text-muted-foreground"
                         }`}
                     >
                         {selfCheckBusy ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
-                            <ScanEye className="h-3.5 w-3.5" />
+                            <ScanEye className="h-4 w-4" />
                         )}
-                        视觉自检{selfCheckEnabled ? " · 开" : " · 关"}
                     </button>
                 </div>
             </CardHeader>

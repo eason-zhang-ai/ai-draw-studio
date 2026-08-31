@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus, Settings, Trash2 } from "lucide-react";
 import {
     Dialog,
@@ -138,8 +138,6 @@ export function ModelConfigDialog({
 
     const canDelete = profiles.length > 1;
 
-    const activeName = useMemo(() => activeProfile?.name || "默认配置", [activeProfile]);
-
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
@@ -150,10 +148,6 @@ export function ModelConfigDialog({
                     className={cn("flex items-center gap-2 h-8 px-2", className)}
                 >
                     <Settings className="h-4 w-4" />
-                    <span className="text-xs text-muted-foreground truncate max-w-[96px] hidden sm:inline">
-                        {activeName}
-                    </span>
-                    {/*<span className="hidden sm:inline">模型设置</span>*/}
                 </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-xl">
