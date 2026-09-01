@@ -75,8 +75,8 @@ The application converts your natural language requests into structured diagram 
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/shenpeiheng/ai-smart-draw.git
-cd ai-smart-draw
+git clone https://github.com/eason-zhang-ai/ai-draw-studio.git
+cd ai-draw-studio
 ```
 
 2. Install dependencies:
@@ -142,12 +142,64 @@ npm run dev
 
 ## 🚀 Deployment
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new) from the creators of Next.js.
+### Option 1: Docker (recommended — one-command deploy)
+
+The project ships with a `Dockerfile` and `docker-compose.yaml`; the image already includes Node.js, Python 3, and Graphviz (required by the drawio-skill scripts).
+
+**1. Prerequisites**
+
+- [Docker](https://docs.docker.com/engine/install/) (with the `docker compose` plugin, or the standalone `docker-compose` binary)
+
+**2. Configure environment variables**
+
+Copy the example config to a local config (`.env.local` is gitignored and never committed):
+
+```bash
+cp env.example .env.local
+```
+
+Edit `.env.local` and fill in your model API:
+
+```bash
+# Required: server-side default model config (used when the browser leaves fields blank)
+AI_BASE_URL="https://code-api.erix.vip/v1"   # or https://api.deepseek.com/v1 (any OpenAI-compatible endpoint)
+AI_API_KEY="sk-your-key"
+AI_MODEL="deepseek-v4-flash"
+AI_VISION_MODEL="deepseek-v4-flash-vision-exp"   # used by visual self-check / image reference; leave empty to disable
+
+# Optional: front-end defaults (inlined at build time; code defaults apply if unset)
+# NEXT_PUBLIC_AI_BASE_URL="https://code-api.erix.vip/v1"
+# NEXT_PUBLIC_AI_VISION_MODEL="deepseek-v4-flash-vision-exp"
+```
+
+> See `env.example` for the full list. `AI_API_KEY` is read at runtime — restart the container after editing it; no image rebuild needed.
+
+**3. Build and start**
+
+```bash
+docker compose up -d --build
+```
+
+**4. Open**
+
+Visit http://localhost:6001
+
+**5. Common commands**
+
+```bash
+docker compose logs -f          # view logs
+docker compose restart          # restart (after editing .env.local)
+docker compose down             # stop and remove the container
+docker compose up -d --build    # rebuild after pulling new code
+```
+
+> The default port is `6001`; change it in the `ports` section of `docker-compose.yaml` (e.g. `"8080:6001"`).
+
+### Option 2: Vercel
+
+You can also deploy with the [Vercel Platform](https://vercel.com/new), or develop locally with `npm run dev` / `npm run build && npm start`.
 
 Check out the [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-
-Or you can deploy by this button.
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fshenpeiheng%2Fai-smart-draw)
 
 ## 📁 Project Structure
 
@@ -161,7 +213,61 @@ components/           # React components
 contexts/             # React context providers
 lib/                  # Utility functions and helpers
 public/               # Static assets including example images
+skills/               # Vendored Agents365-ai diagram skill family (MIT)
+  drawio-skill/       # XML authoring rules / scripts / shape index / style presets
+  mermaid-skill/
+  excalidraw-skill/
+  plantuml-skill/
 ```
+
+## ❓ FAQ
+
+### Q1: How does `Agents365-ai/drawio-skill` work in this project?
+
+It is **not a "run" plugin or an MCP service** — it's two kinds of assets ported into the web app:
+
+1. **Injected as prompt knowledge** (`lib/skill-assets.ts`): `buildDrawioSkillContext()` returns a ~1.5KB compact reference (XML skeleton, shape keywords, edge rules, palette, diagram-type hints) appended to the drawio chat route's system prompt (`app/api/chat/route.ts`).
+   > Note: originally the full 13KB `xml-authoring.md` was injected, but it made the deepseek reasoning model "over-think" (1/5 success rate), so it was reduced to a 1.5KB compact version (6/6 success rate).
+
+2. **Called as deterministic scripts via backend routes**:
+
+| skill script | Implementation | Exposed as |
+|---|---|---|
+| `shapesearch.py` (10k+ official shape styles) | TS port `lib/shape-search.ts`, reads `data/shape-index.json.gz` | `search_shapes` tool |
+| `aiicons.py` (AI brand logos) | TS port, reads `data/lobe-icons.json` | `ai_icon` tool |
+| `autolayout.py` (Graphviz layout) | `python3` call | `layout_diagram` tool + "Auto layout" button |
+| `restyle.py` (re-theme) | `python3` call | `apply_style` tool + "Style" dropdown |
+| `c4.py` (C4 multi-page drill-down) | `python3` call | `c4_diagram` tool |
+| `sqlerd/tfimports/openapiimports/pyimports/jsimports` | `python3` call | file upload → `/api/import` |
+
+3. **Integrated as model tools**: these capabilities are registered as AI SDK tools, so the model can invoke them directly in a conversation (e.g. "draw an AWS architecture with official icons" triggers `search_shapes` automatically).
+
+**What's NOT used**: the draw.io desktop CLI (headless PNG export) is replaced by the iframe's in-browser export, so this project **does not require installing draw.io desktop**.
+
+### Q2: How does the visual self-check work, and what does it do?
+
+This is a browser version of drawio-skill's "Step 5 Self-Check" — **letting the model "see" its own output, find layout issues, and fix them** (the text model that generates the XML is "blind" to the rendered result).
+
+**Flow** (`components/chat-panel.tsx` + `app/api/selfcheck/*`):
+
+```
+Diagram generated (display_diagram)
+  → ① self-check toggle ON & a vision model configured?
+       ↓ yes
+  → ② export PNG from the canvas (exportPng in contexts/diagram-context.tsx)
+  → ③ send the PNG to deepseek-v4-flash-vision-exp (/api/selfcheck)
+       checks: overlaps / clipped labels / arrows missing targets /
+               edges crossing nodes / off-canvas / edge-label overlaps
+       → returns a JSON issue list
+  → ④ issues found? issues + a cell catalog go to the text model (/api/selfcheck-fix)
+       which emits id-based directives (move/nudge/relabel/restyle/delete)
+       → lib/xml-edit.ts applies them deterministically → loop back to ② (max 2 rounds)
+  → ⑤ feedback in chat: passed / auto-fixed N issues / issue list
+```
+
+**Purpose**: a quality safety net — the text model "guesses" coordinates and tends to produce overlaps, clipped labels, and tangled edges; the vision model inspects the real render, catches visible problems, and attempts to fix them automatically.
+
+**Limits**: detection is reliable; auto-fix is limited by the upstream model (~50-67% success per attempt, with 3 retries; on failure it degrades to listing the issues for manual fixing).
 
 ## ✅ TODOs
 

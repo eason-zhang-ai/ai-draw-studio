@@ -83,8 +83,8 @@ AI 智能绘图利用现代 Web 技术在自然语言和图表表示之间架起
 
 1. 克隆仓库：
 ```bash
-git clone https://github.com/shenpeiheng/ai-smart-draw.git
-cd ai-smart-draw
+git clone https://github.com/eason-zhang-ai/ai-draw-studio.git
+cd ai-draw-studio
 ```
 
 2. 安装依赖：
@@ -150,12 +150,64 @@ npm run dev
 
 ## 🚀 部署
 
-部署 Next.js 应用的最简单方法是使用 Next.js 创建者提供的 [Vercel 平台](https://vercel.com/new)。
+### 方式一：Docker（推荐，本地/服务器一键部署）
+
+项目已内置 `Dockerfile` 与 `docker-compose.yaml`，镜像内已包含 Node、Python3、Graphviz（drawio-skill 脚本所需）。
+
+**1. 前置条件**
+
+- [Docker](https://docs.docker.com/engine/install/)（含 `docker compose` 插件，或 `docker-compose` 独立二进制）
+
+**2. 配置环境变量**
+
+复制示例配置为本地配置（`.env.local` 已被 gitignore，不会提交）：
+
+```bash
+cp env.example .env.local
+```
+
+编辑 `.env.local`，填入你的模型 API：
+
+```bash
+# 必填：服务端默认模型配置（前端不填时使用）
+AI_BASE_URL="https://code-api.erix.vip/v1"   # 或 https://api.deepseek.com/v1 等 OpenAI 兼容端点
+AI_API_KEY="sk-你的key"
+AI_MODEL="deepseek-v4-flash"
+AI_VISION_MODEL="deepseek-v4-flash-vision-exp"   # 视觉自检/图片参考用，可留空禁用
+
+# 可选：前端默认展示（构建时内联；不设则用代码内置默认值）
+# NEXT_PUBLIC_AI_BASE_URL="https://code-api.erix.vip/v1"
+# NEXT_PUBLIC_AI_VISION_MODEL="deepseek-v4-flash-vision-exp"
+```
+
+> 完整变量说明见 `env.example`。`AI_API_KEY` 是运行时读取的，改后只需重启容器，无需重新构建镜像。
+
+**3. 构建并启动**
+
+```bash
+docker compose up -d --build
+```
+
+**4. 访问**
+
+打开 http://localhost:6001
+
+**5. 常用命令**
+
+```bash
+docker compose logs -f          # 查看日志
+docker compose restart          # 重启（改 .env.local 后）
+docker compose down             # 停止并删除容器
+docker compose up -d --build    # 更新代码后重建
+```
+
+> 端口默认 `6001`，可在 `docker-compose.yaml` 的 `ports` 中修改（如 `"8080:6001"`）。
+
+### 方式二：Vercel
+
+也可以使用 Next.js 创建者提供的 [Vercel 平台](https://vercel.com/new) 部署，或在本地 `npm run dev` / `npm run build && npm start` 开发调试。
 
 查看 [Next.js 部署文档](https://nextjs.org/docs/app/building-your-application/deploying)了解更多详情。
-
-或者您可以使用此按钮进行部署。
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fshenpeiheng%2Fai-smart-draw)
 
 ## 📁 项目结构
 
