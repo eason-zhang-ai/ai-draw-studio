@@ -22,6 +22,7 @@ interface KrokiPreviewProps {
 }
 
 const DIAGRAM_TYPES = [
+    { value: "auto", label: "自动检测 (Auto)" },
     { value: "vegalite", label: "Vega-Lite" },
     { value: "actdiag", label: "ActDiag" },
     { value: "blockdiag", label: "BlockDiag" },

@@ -109,7 +109,7 @@ export function CollapsibleChatPanel({
             variant="outline"
             size="sm"
             className="flex items-center gap-2 h-8 px-2"
-            title="GitHub shenpeiheng"
+            title="GitHub eason-zhang-ai/ai-draw-studio"
             onClick={() => window.open('https://github.com/eason-zhang-ai/ai-draw-studio', '_blank')}
           >
             <Github className="h-4 w-4" />

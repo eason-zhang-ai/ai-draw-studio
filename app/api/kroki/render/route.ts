@@ -1,6 +1,8 @@
 "use server";
 
 import {Buffer} from "node:buffer";
+import {spawn} from "node:child_process";
+import {encode as encodePlantUml} from "plantuml-encoder";
 import {NextRequest, NextResponse} from "next/server";
 
 // Kroki renderers to try in order. kroki.io is the public default; a
@@ -9,6 +11,95 @@ const DEFAULT_RENDERERS = [
     process.env.KROKI_RENDER_BASE?.replace(/\/$/, ""),
     "https://kroki.io",
 ].filter(Boolean) as string[];
+
+// The public kroki.io instance is frequently overloaded/slow; cap each
+// renderer request so we fail fast with a clear error instead of hanging
+// behind a reverse proxy until it returns 502.
+const KROKI_TIMEOUT_MS = 20000;
+
+// PlantUML is rendered via plantuml.com (its own URL encoding, not Kroki's
+// deflate/base64url), which is reachable even when kroki.io is down.
+const PLANTUML_RENDERERS = [
+    process.env.PLANTUML_RENDER_BASE?.replace(/\/$/, ""),
+    "https://www.plantuml.com/plantuml/svg",
+].filter((value): value is string => Boolean(value && value.trim().length > 0));
+
+// Graphviz is rendered locally with the `dot` binary (installed in the
+// runtime image). This removes the network dependency entirely for the
+// graphviz diagram type, which is the most common kroki workload here.
+async function renderGraphvizLocal(definition: string): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+        const child = spawn("dot", ["-Tsvg"], {
+            stdio: ["pipe", "pipe", "pipe"],
+        });
+        let stdout = "";
+        let stderr = "";
+        // stdio is ["pipe", "pipe", "pipe"], so these streams are non-null.
+        child.stdout!.setEncoding("utf8");
+        child.stderr!.setEncoding("utf8");
+        child.stdout!.on("data", (chunk: string) => {
+            stdout += chunk;
+        });
+        child.stderr!.on("data", (chunk: string) => {
+            stderr += chunk;
+        });
+
+        const killTimer = setTimeout(() => child.kill("SIGKILL"), 20000);
+
+        child.on("error", (error) => {
+            clearTimeout(killTimer);
+            reject(error);
+        });
+        child.on("close", (code) => {
+            clearTimeout(killTimer);
+            if (code !== 0) {
+                reject(new Error(`dot exited with code ${code}: ${stderr}`));
+            } else if (!stdout.trim()) {
+                reject(new Error("dot produced empty output"));
+            } else {
+                resolve(stdout);
+            }
+        });
+
+        // Ignore EPIPE when dot exits early without consuming stdin.
+        child.stdin!.on("error", () => {});
+        child.stdin!.end(definition);
+    });
+}
+
+// Render PlantUML through the reachable plantuml.com endpoint(s). Accepts
+// definitions with or without the @startuml/@enduml wrappers (plantuml.com
+// handles both).
+async function renderPlantUmlRemote(
+    definition: string,
+): Promise<{svg: string; renderer: string}> {
+    const encoded = encodePlantUml(definition);
+    let lastError = "No PlantUML renderer available";
+    for (const renderer of PLANTUML_RENDERERS) {
+        try {
+            const response = await fetch(`${renderer}/${encoded}`, {
+                cache: "no-store",
+                signal: AbortSignal.timeout(KROKI_TIMEOUT_MS),
+            });
+            if (!response.ok) {
+                lastError = `${renderer} responded with ${response.status} ${response.statusText || ""}`.trim();
+                continue;
+            }
+            const contentType = response.headers.get("content-type") ?? "image/svg+xml";
+            if (!contentType.includes("svg")) {
+                const buffer = Buffer.from(await response.arrayBuffer());
+                return {
+                    svg: `data:${contentType};base64,${buffer.toString("base64")}`,
+                    renderer,
+                };
+            }
+            return {svg: await response.text(), renderer};
+        } catch (error) {
+            lastError = error instanceof Error ? error.message : "Unknown PlantUML renderer error.";
+        }
+    }
+    throw new Error(lastError);
+}
 
 // Supported diagram types and their endpoints
 // Reference: https://kroki.io/#support
@@ -156,10 +247,34 @@ export async function POST(request: NextRequest) {
         ? diagramType
         : detectDiagramType(definition);
 
+    // Render Graphviz locally with `dot` first — fast, deterministic and
+    // offline. Only fall back to the network renderers if that fails.
+    let lastError: string | undefined;
+    if (finalDiagramType === "graphviz") {
+        try {
+            const svg = await renderGraphvizLocal(definition);
+            return NextResponse.json({svg, renderer: "local-graphviz"});
+        } catch (localError) {
+            // Continue to the Kroki fallback below.
+            lastError = `Local Graphviz failed (${localError instanceof Error ? localError.message : "unknown"}); trying Kroki.`;
+        }
+    }
+
+    // PlantUML goes through plantuml.com (reachable even when kroki.io is
+    // down). This is also the default definition of the Kroki workspace.
+    if (finalDiagramType === "plantuml") {
+        try {
+            const {svg, renderer} = await renderPlantUmlRemote(definition);
+            return NextResponse.json({svg, renderer});
+        } catch (plantError) {
+            lastError = `PlantUML renderer failed (${plantError instanceof Error ? plantError.message : "unknown"}); trying Kroki.`;
+        }
+    }
+
     const encoded = encodeDiagram(definition);
 
     // Try each renderer in order until one succeeds.
-    let lastError = "No Kroki renderer available";
+    if (!lastError) lastError = "No Kroki renderer available";
     for (const renderer of DEFAULT_RENDERERS) {
         const url = `${renderer}/${finalDiagramType}/svg/${encoded}`;
         try {
@@ -169,6 +284,7 @@ export async function POST(request: NextRequest) {
                     'Accept': 'image/svg+xml',
                 },
                 cache: "no-store",
+                signal: AbortSignal.timeout(KROKI_TIMEOUT_MS),
             });
 
             if (!response.ok) {
