@@ -29,6 +29,7 @@
 - **可折叠聊天面板**: 展开或折叠聊天界面以最大化工作区
 - **灵活渲染**: 具有回退机制的多种渲染选项
 - **模型配置**: 直接从浏览器自定义 AI 模型
+- **Mermaid 智能增强**: 内置「适配移动端 / 优化可读性 / 架构审查」快捷操作，按需注入结构优先的精修与审查协议
 
 ## 🎯 支持的图表类型
 
@@ -36,7 +37,7 @@
 使用 AI 驱动的 XML 生成和修改功能创建和编辑专业流程图、过程图和复杂可视化图表。
 
 ### Mermaid
-在专用工作区中生成流程图、序列图、甘特图等，并提供实时 SVG 预览。
+在专用工作区中生成流程图、序列图、甘特图等，并提供实时 SVG 预览。聊天面板内置「适配移动端 / 优化可读性 / 架构审查」快捷操作：精修遵循「方向→标签→分组→拆图→样式」的结构优先顺序，审查会区分事实与推测并列出缺失的边界/失败路径。
 
 ### PlantUML
 内置渲染代理，支持 plantuml.com、kroki.io 或自定义端点创建 UML 图表。
@@ -45,10 +46,10 @@
 结合 AI 辅助的徒手风格绘图，用于有机图表创建。
 
 ### Graphviz
-使用 DOT 语言语法创建图形图表。Graphviz 通过 kroki.io 服务提供支持，该服务提供强大的图形可视化功能。
+使用 DOT 语言语法创建图形图表。Graphviz 优先由容器内置的 `dot` 引擎**本地渲染**（离线、无网络依赖），本地渲染失败时才回退到 kroki.io。
 
 ### Kroki (20 多种格式)
-使用 kroki.io 服务在各种格式中生成图表，通过单一界面支持：
+通过 kroki.io 服务在各种格式中生成图表；其中 **Graphviz 类型由本地 `dot` 渲染、PlantUML 类型直连 plantuml.com**，其余类型使用 kroki.io（带 20 秒超时快速失败），可通过 `KROKI_RENDER_BASE` 环境变量指向自建 Kroki 实例。类型下拉默认「自动检测 (Auto)」。支持：
 
 - **PlantUML**: UML 图表、活动图、序列图等
 - **Mermaid**: 流程图、序列图、甘特图等
@@ -131,7 +132,7 @@ npm run dev
     - `/plantuml` -> PlantUML (具有远程预览的基于文本的图表)
     - `/excalidraw` -> Excalidraw (由相同模型驱动的自由形式画布)
     - `/kroki` -> Kroki (由 kroki.io 驱动的多格式图表)
-    - `/graphviz` -> Graphviz (由 kroki.io 驱动的图形可视化图表)
+    - `/graphviz` -> Graphviz (容器内置 dot 本地渲染，kroki.io 回退)
 
 ## 🌐 用户界面功能
 
@@ -275,6 +276,27 @@ skills/               # vendor 的 Agents365-ai 图表 skill 家族（MIT）
 **作用**：质量兜底——文本模型靠"脑补"坐标，容易重叠/截断/连线乱；视觉模型用真实渲染图挑错，抓到的是肉眼可见的问题，并尝试自动修复。
 
 **边界**：检测这半段可靠；自动修复这半段受上游模型限制（约 50-67% 成功率，带 3 次重试，失败时降级为列出问题清单供手动修改）。
+
+### Q3：Mermaid 的「适配移动端 / 优化可读性 / 架构审查」快捷操作是怎么工作的？
+
+这三个入口借鉴了 [mermaid2img Skill Hub](https://mermaid2img.com/zh-CN/skills) 的 `mermaid-preview-refinement` 与 `mermaid-architecture-review` 实践：
+
+- 点击快捷按钮会把对应指令填入输入框；发送后由 `lib/diagram-prompt-guidelines.ts` **按关键词匹配**注入对应协议（不命中就不注入，避免提示词膨胀）。
+- **精修协议**：按「方向 → 标签 → 分组 → 重排 → 拆图 → 换型 → 样式」的顺序做最小结构修改；禁止用缩小字体/堆颜色掩盖结构问题；最多自主 2 轮。
+- **审查协议**：检查系统边界、数据归属、组件读写、人工批准、正常/失败路径；**区分事实与推测**，先文字列出发现、再给出改进后的图。
+- 所有图表模式还共享两条常驻规则（`DIAGRAM_QUALITY_GUIDELINES`）：不编造用户材料中不存在的组件/流程（缺失标为假设/待确认），以及约 12 个顶层节点触发拆图/聚合。
+
+### Q4：Graphviz / Kroki 的渲染后端与回退策略是什么？
+
+公共 `kroki.io` 实例经常超载且渲染端点不稳定，因此 `app/api/kroki/render/route.ts` 做了分层回退：
+
+| 图表类型 | 渲染路径 | 回退 |
+|---|---|---|
+| Graphviz | 容器内置 `dot -Tsvg` **本地渲染**（离线） | kroki.io |
+| PlantUML（Kroki 模式的默认类型） | `plantuml.com`（`PLANTUML_RENDER_BASE` 可覆盖） | kroki.io |
+| 其他 20+ 类型 | kroki.io（20 秒超时，快速失败并给出明确错误） | `KROKI_RENDER_BASE` 指向自建实例 |
+
+如需完全离线渲染全部类型，可在 `docker-compose.yaml` 中自建 Kroki 服务并把 `KROKI_RENDER_BASE` 指向它。
 
 ## ✅ 待办事项
 

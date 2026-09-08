@@ -16,6 +16,8 @@ Diagram quality checklist:
 - For architecture and process diagrams, show boundaries, ownership, direction of data/control flow, and key decision points.
 - For edits, preserve stable parts of the current diagram and improve only what the user asked to change.
 - Before calling the display tool, self-check that the diagram is syntactically valid, complete, readable, and renderable.
+- Never invent components, calls, states, or data flows that the user's material does not support; mark unresolved items as assumptions or open questions instead of presenting them as facts.
+- Treat roughly 12 top-level nodes as a review trigger: prefer splitting into multiple focused diagrams or introducing aggregator/hub nodes over a single overloaded diagram.
 `;
 
 type ProfessionalPattern = {
@@ -175,6 +177,57 @@ Data pipeline diagram patterns:
 - Use arrows to represent data movement, not organizational relationships.
 - Keep the pipeline left-to-right or top-to-bottom with branch/merge points explicitly shown; do not draw long diagonal data paths across stages.
 - Keep transformations named by business meaning, not only tool names.
+`,
+    },
+    {
+        keywords: [
+            "适配",
+            "移动端",
+            "手机",
+            "竖屏",
+            "屏幕",
+            "太宽",
+            "太挤",
+            "拥挤",
+            "可读性",
+            "优化",
+            "mobile",
+            "viewport",
+            "readability",
+            "refine",
+            "responsive",
+        ],
+        guidance: `
+Diagram preview refinement patterns — fix structure before styling, in this order:
+1. Change the layout direction (e.g. LR→TD, rankdir, left-to-right→top-to-bottom) to fit the target viewport instead of shrinking fonts.
+2. Shorten labels without removing meaning; split long labels into smaller nodes or notes.
+3. Group related nodes into lanes, sections, or subgraphs to reveal structure.
+4. Reorder declarations to reduce edge crossings and long diagonal links.
+5. Split an overloaded diagram into an overview plus detail views when it is too dense for the target screen.
+6. Change the diagram type when the current grammar fights the information.
+7. Only after the structure reads well, add restrained styling.
+- Never solve structural problems with smaller fonts, extra colors, or decorative classes.
+- If the user names a target screen (e.g. mobile ~390px), keep the change minimal and state which viewport the result targets.
+- Stop after at most two refinement rounds unless the user asks for more.
+`,
+    },
+    {
+        keywords: [
+            "架构审查",
+            "审查",
+            "评审",
+            "review",
+            "audit",
+            "风险评估",
+            "风险检查",
+        ],
+        guidance: `
+Architecture review patterns — when asked to review or audit the current diagram:
+- Check explicit boundaries: users/clients, edge, application services, data stores, external systems, and operations.
+- Check data ownership and component read/write access; label sync vs async paths.
+- Check human approval gates and normal vs failure paths (retries, timeouts, rollbacks, fallbacks).
+- Distinguish confirmed facts from speculation: state which parts come from the user's material and which are proposed.
+- Present the findings briefly in text first, then deliver the improved diagram.
 `,
     },
 ];

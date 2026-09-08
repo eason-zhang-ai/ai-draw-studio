@@ -2,6 +2,12 @@
 
 English | [中文](README.md)
 
+> **This project is a fork of [shenpeiheng/ai-smart-draw](https://github.com/shenpeiheng/ai-smart-draw) (MIT)** with the following enhancements:
+>
+> - **DeepSeek V4 model family support**: `deepseek-v4-flash` (fast), `deepseek-v4-pro` (strong), `deepseek-v4-flash-vision-exp` (vision), custom OpenAI-compatible API endpoints, multi-config management + capability routing (requests with images automatically switch to the vision model).
+> - **Injected [Agents365-ai/drawio-skill](https://github.com/Agents365-ai/drawio-skill) (MIT) content assets**: XML rules / diagram-type presets / style references injected into the model context; deterministic server-side tools `search_shapes` (10,446 official shape styles) and `ai_icon` (AI/LLM brand logos).
+> - **Visual self-check**: after generating a diagram, a vision model reviews the rendered image and attempts to fix layout issues; disabled automatically when no vision model is configured.
+
 An intelligent diagramming application built with Next.js that harnesses the power of AI to create and manipulate various types of diagrams including Draw.io (diagrams.net), Mermaid, PlantUML, Excalidraw, and over 20 other diagram formats through natural language commands.
 
 🔗 **Live Demo**:
@@ -24,6 +30,7 @@ An intelligent diagramming application built with Next.js that harnesses the pow
 - **Collapsible Chat Panel**: Expand or collapse the chat interface to maximize workspace
 - **Flexible Rendering**: Multiple rendering options with fallback mechanisms
 - **Model Configuration**: Customize AI models directly from the browser
+- **Mermaid Smart Enhancements**: one-click "Fit mobile / Improve readability / Architecture review" quick actions with structure-first refinement and review protocols
 
 ## 🎯 Supported Diagram Types
 
@@ -31,7 +38,7 @@ An intelligent diagramming application built with Next.js that harnesses the pow
 Create and edit professional flowcharts, process diagrams, and complex visualizations using AI-powered XML generation and modification.
 
 ### Mermaid
-Generate flowcharts, sequence diagrams, Gantt charts, and more with live SVG previews in a dedicated workspace.
+Generate flowcharts, sequence diagrams, Gantt charts, and more with live SVG previews in a dedicated workspace. The chat panel ships quick actions — **Fit mobile / Improve readability / Architecture review** — that apply structure-first refinement (direction → labels → grouping → split → styling) and a fact-vs-speculation architecture review.
 
 ### PlantUML
 Create UML diagrams with a built-in rendering proxy that supports plantuml.com, kroki.io, or custom endpoints.
@@ -39,8 +46,11 @@ Create UML diagrams with a built-in rendering proxy that supports plantuml.com, 
 ### Excalidraw
 Freehand-style sketching combined with AI assistance for organic diagram creation.
 
+### Graphviz
+Create graph diagrams with the DOT language. Graphviz is rendered **locally by the built-in `dot` engine** (offline, no network dependency), falling back to kroki.io only if local rendering fails.
+
 ### Kroki (20+ Formats)
-Generate diagrams in various formats using the kroki.io service with a single interface. Supports:
+Generate diagrams in various formats using the kroki.io service with a single interface. **Graphviz types are rendered by the local `dot` engine and PlantUML types go directly to plantuml.com**, while the remaining types use kroki.io (with a 20s timeout that fails fast); set `KROKI_RENDER_BASE` to point at a self-hosted Kroki instance. The type dropdown defaults to "Auto-detect". Supports:
 
 - **PlantUML**: UML diagrams, activity diagrams, sequence diagrams, etc.
 - **Mermaid**: Flowcharts, sequence diagrams, Gantt charts, etc.
@@ -123,7 +133,7 @@ npm run dev
     - `/plantuml` -> PlantUML (text-based diagrams with remote preview)
     - `/excalidraw` -> Excalidraw (freeform canvas powered by the same model)
     - `/kroki` -> Kroki (multi-format diagrams powered by kroki.io)
-    - `/graphviz` -> Graphviz (graph visualization diagrams powered by kroki.io)
+    - `/graphviz` -> Graphviz (rendered locally by the built-in dot engine, kroki.io fallback)
 
 ## 🌐 User Interface Features
 
@@ -268,6 +278,27 @@ Diagram generated (display_diagram)
 **Purpose**: a quality safety net — the text model "guesses" coordinates and tends to produce overlaps, clipped labels, and tangled edges; the vision model inspects the real render, catches visible problems, and attempts to fix them automatically.
 
 **Limits**: detection is reliable; auto-fix is limited by the upstream model (~50-67% success per attempt, with 3 retries; on failure it degrades to listing the issues for manual fixing).
+
+### Q3: How do the Mermaid quick actions (Fit mobile / Improve readability / Architecture review) work?
+
+These entry points adapt the `mermaid-preview-refinement` and `mermaid-architecture-review` practices from the [mermaid2img Skill Hub](https://mermaid2img.com/zh-CN/skills):
+
+- Clicking a quick action fills the matching instruction into the input; on send, `lib/diagram-prompt-guidelines.ts` injects the corresponding protocol **only when its keywords match** (keeps the prompt lean).
+- **Refinement protocol**: minimal structural fixes in the order direction → labels → grouping → reorder → split → type change → styling; never hide structural problems with smaller fonts or extra colors; at most 2 autonomous rounds.
+- **Review protocol**: checks system boundaries, data ownership, component read/write, human approval gates, and normal/failure paths; **distinguishes facts from speculation**, listing findings in text before delivering the improved diagram.
+- All diagram modes also share two always-on rules (`DIAGRAM_QUALITY_GUIDELINES`): never invent components/flows the user's material doesn't support (mark gaps as assumptions), and treat ~12 top-level nodes as a split/aggregation trigger.
+
+### Q4: What rendering backends and fallbacks do Graphviz / Kroki use?
+
+The public `kroki.io` instance is frequently overloaded and its render endpoints are unstable, so `app/api/kroki/render/route.ts` uses layered fallbacks:
+
+| Diagram type | Rendering path | Fallback |
+|---|---|---|
+| Graphviz | built-in `dot -Tsvg`, rendered **locally** (offline) | kroki.io |
+| PlantUML (the Kroki workspace default) | `plantuml.com` (override with `PLANTUML_RENDER_BASE`) | kroki.io |
+| Other 20+ types | kroki.io (20s timeout, fails fast with a clear error) | `KROKI_RENDER_BASE` → self-hosted instance |
+
+To render all types fully offline, add a self-hosted Kroki service to `docker-compose.yaml` and point `KROKI_RENDER_BASE` at it.
 
 ## ✅ TODOs
 

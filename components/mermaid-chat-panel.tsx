@@ -18,6 +18,26 @@ import { ModeSelector } from "@/components/mode-selector";
 import { ModelConfigDialog } from "@/components/model-config-dialog";
 import { useModelConfig } from "@/contexts/model-config-context";
 
+// Quick actions for the current diagram, aligned with the mermaid2img
+// skill hub guidance (preview refinement + architecture review).
+const QUICK_ACTIONS = [
+    {
+        label: "适配移动端",
+        prompt:
+            "图太宽了，帮我适配移动端竖屏（约 390px 宽）：优先调整布局方向与结构，不要缩小字体。",
+    },
+    {
+        label: "优化可读性",
+        prompt:
+            "请优化这张图的可读性：按「方向 → 标签 → 分组 → 重排 → 拆图 → 换型 → 样式」的顺序做最小结构修改，不要用缩小字体或加颜色掩盖结构问题。",
+    },
+    {
+        label: "架构审查",
+        prompt:
+            "请对当前图做一次架构审查：检查系统边界、数据归属、组件读写、人工批准、正常/失败路径，区分事实与推测；先简要列出发现，再给出改进后的图。",
+    },
+];
+
 export default function MermaidChatPanel() {
     const { definition, clearDefinition } = useMermaid();
     const [files, setFiles] = useState<File[]>([]);
@@ -107,7 +127,21 @@ export default function MermaidChatPanel() {
                     setFiles={handleFileChange}
                 />
             </CardContent>
-            <CardFooter className="p-2">
+            <CardFooter className="p-2 flex flex-col items-stretch gap-1">
+                {definition?.trim() && (
+                    <div className="flex flex-wrap gap-1.5 px-1">
+                        {QUICK_ACTIONS.map((action) => (
+                            <button
+                                key={action.label}
+                                className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium py-1 px-2 rounded"
+                                onClick={() => setInput(action.prompt)}
+                                title={action.prompt}
+                            >
+                                {action.label}
+                            </button>
+                        ))}
+                    </div>
+                )}
                 <ChatInput
                     input={input}
                     status={status}
