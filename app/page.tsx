@@ -38,6 +38,10 @@ export default function Home() {
                 setLayoutNotice("画布上还没有可布局的节点");
                 return;
             }
+            if (graph.edges.length === 0 && graph.nodes.length === 1) {
+                setLayoutNotice("当前图表只有 1 个节点、没有连线，无需自动布局");
+                return;
+            }
             const res = await fetch("/api/layout", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -47,7 +51,7 @@ export default function Home() {
             if (res.ok && data.xml) {
                 loadDiagram(data.xml);
                 setLayoutNotice(
-                    `✅ Graphviz 自动布局完成：${graph.nodes.length} 节点 / ${graph.edges.length} 连线`
+                    `✅ 自动布局完成：${graph.nodes.length} 节点 / ${graph.edges.length} 连线`
                 );
             } else {
                 setLayoutNotice(`自动布局失败：${data?.error || res.status}`);
