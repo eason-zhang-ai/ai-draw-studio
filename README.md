@@ -6,6 +6,7 @@
 >
 > - **DeepSeek V4 系列模型支持**：`deepseek-v4-flash`（快速）、`deepseek-v4-pro`（强力）、`deepseek-v4-flash-vision-exp`（视觉），支持自定义 API 端点（OpenAI 兼容），多配置管理 + 能力路由（含图片的请求自动切到视觉模型）。
 > - **注入 [Agents365-ai/drawio-skill](https://github.com/Agents365-ai/drawio-skill)（MIT）内容资产**：`skills/drawio-skill/` 的 XML 规范 / 图表类型预设 / 样式速查随请求注入模型上下文；`search_shapes`（10,446 个官方形状精确 style）与 `ai_icon`（AI/LLM 品牌 logo）两个服务端工具，杜绝"猜 shape 变空白框"。
+> - **借鉴 [mermaid2img Skill Hub](https://mermaid2img.com/zh-CN/skills) 实践**：Mermaid 模式内置「适配移动端 / 优化可读性 / 架构审查」快捷操作，其结构优先的精修顺序与审查协议来自 hub 实测收录的 `mermaid-preview-refinement` 与 `mermaid-architecture-review`；反幻觉与 12 节点拆分规则借鉴 `mermaid-diagram-builder`（源码见 [mermaid2img/mermaid-skills](https://github.com/mermaid2img/mermaid-skills)）。
 > - **视觉开关**：配置视觉模型后启用图片上传/粘贴，未配置时自动禁用。
 >
 > 上游在线演示：https://ai-smart-draw.vercel.app/
