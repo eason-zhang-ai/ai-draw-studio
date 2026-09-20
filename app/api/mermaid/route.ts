@@ -93,7 +93,7 @@ ${getProfessionalDiagramGuidelines(lastMessageText)}
             }
         }
 
-        const { client, model } = resolveModel(modelConfig);
+        const { client, model, providerOptions } = resolveModel(modelConfig);
 
         const composedSystem = `${systemMessage}
 
@@ -105,6 +105,7 @@ ${buildMermaidSkillContext(lastMessageText)}`;
             model: client.chat(model),
             messages: enhancedMessages,
             temperature: 0.2,
+            providerOptions,
             tools: {
                 display_mermaid: {
                     description:

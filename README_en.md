@@ -4,10 +4,11 @@ English | [中文](README.md)
 
 > **This project is a fork of [shenpeiheng/ai-smart-draw](https://github.com/shenpeiheng/ai-smart-draw) (MIT)** with the following enhancements:
 >
-> - **DeepSeek V4 model family support**: `deepseek-v4-flash` (fast), `deepseek-v4-pro` (strong), `deepseek-v4-flash-vision-exp` (vision), custom OpenAI-compatible API endpoints, multi-config management + capability routing (requests with images automatically switch to the vision model).
+> - **DeepSeek V4 model family support**: `deepseek-v4-flash`, `deepseek-v4-pro`, `deepseek-v4-flash-vision-exp` and other OpenAI-compatible endpoints, multiple config profiles (localStorage), and a **single model + image-capability toggle** (no separate model for images anymore). The default model comes from the `AI_MODEL` env var.
 > - **Injected [Agents365-ai/drawio-skill](https://github.com/Agents365-ai/drawio-skill) (MIT) content assets**: XML rules / diagram-type presets / style references injected into the model context; deterministic server-side tools `search_shapes` (10,446 official shape styles) and `ai_icon` (AI/LLM brand logos).
 > - **Practices adapted from the [mermaid2img Skill Hub](https://mermaid2img.com/zh-CN/skills)**: the Mermaid mode ships "Fit mobile / Improve readability / Architecture review" quick actions; the structure-first refinement order and review protocol come from the hub's curated `mermaid-preview-refinement` and `mermaid-architecture-review`, and the anti-fabrication + 12-node split rules are adapted from `mermaid-diagram-builder` (source: [mermaid2img/mermaid-skills](https://github.com/mermaid2img/mermaid-skills)).
-> - **Visual self-check**: after generating a diagram, a vision model reviews the rendered image and attempts to fix layout issues; disabled automatically when no vision model is configured.
+> - **Visual self-check**: after generating a diagram, the same model reviews the rendered image and attempts to fix layout issues; available once you tick "model supports image input" in Model Settings.
+> - **Adjustable thinking level**: set a default via the `AI_THINKING_LEVEL` env var (`none`/`minimal`/`low`/`medium`/`high`), overridable per browser in Model Settings — useful for suppressing long reasoning loops that cause degeneration and latency.
 
 An intelligent diagramming application built with Next.js that harnesses the power of AI to create and manipulate various types of diagrams including Draw.io (diagrams.net), Mermaid, PlantUML, Excalidraw, and over 20 other diagram formats through natural language commands.
 
@@ -102,26 +103,44 @@ yarn install
 cp env.example .env.local
 ```
 
-Then update `.env.local` with your OpenAI credentials.
+Then fill in your model-service credentials.
 
-### OpenAI Configuration
+### Model Service Configuration
 
-- `OPENAI_API_KEY` (required): Secret key from your OpenAI account.
-- `OPENAI_MODEL` (optional): Defaults to `gpt-4o-mini`, override if you prefer another released variant.
-- `OPENAI_BASE_URL` (optional): Defaults to `https://api.openai.com/v1`; set this if you are self-hosting a proxy or gateway.
+Every variable supports both the `AI_*` (preferred) and `OPENAI_*` (fallback) prefixes; `AI_*` wins.
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `AI_BASE_URL` | yes | OpenAI-compatible endpoint, e.g. `https://code-api.erix.vip/v1`, `https://api.deepseek.com/v1` |
+| `AI_API_KEY` | yes | Endpoint key |
+| `AI_MODEL` | yes | Default model. Diagram generation and image input **share the same model** |
+| `AI_MAX_OUTPUT_TOKENS` | no | Max output tokens. There is **no code-level cap**; the real ceiling is whatever the model/endpoint allows |
+| `AI_THINKING_LEVEL` | no | Reasoning effort `none` / `minimal` / `low` / `medium` / `high`; empty = keep the endpoint default |
+| `AI_MODEL_SUPPORTS_VISION` | no | `true` / `false`: whether the default model accepts image input; server default for the client's "model supports image input" toggle |
 
 Example snippet:
 ```bash
-OPENAI_API_KEY="sk-your-key"
-# OPENAI_MODEL="gpt-4o-mini"
-# OPENAI_BASE_URL="https://api.openai.com/v1"
+AI_BASE_URL="https://code-api.erix.vip/v1"
+AI_API_KEY="sk-your-key"
+AI_MODEL="deepseek-v4-flash"
+AI_MAX_OUTPUT_TOKENS="384000"
+AI_THINKING_LEVEL="low"
+AI_MODEL_SUPPORTS_VISION="true"
 ```
 
-#### Optional: Configure from the browser
+> `AI_*` variables are read at **server runtime** — restart the container after changing them, **no image rebuild needed**.
+> This project does not use `NEXT_PUBLIC_*`: those are inlined into the browser bundle by `next build`, so changing them at runtime has no effect.
 
-- Click the **模型设置** button in any workspace header to override API Key, Base URL, or model for the current browser. Values are stored in `localStorage` and only sent to the server when you submit a chat request.
-- Leave any field blank to fall back to the server-side environment variables described above.
-- Use the **拉取列表** button to call the `/api/models` helper, which forwards the current credentials to `GET /models` and lists selectable model IDs.
+#### Optional: Configure from the browser (Model Settings)
+
+Click the **模型设置** (gear) button in the workspace header:
+
+- **Profiles**: keep several configs (e.g. "production gateway", "local Ollama"), each with its own Base URL / API Key / model / generation params. Clicking 「新增配置」 first opens a dialog where you **pick a starting endpoint preset** (server default / Erix gateway / OpenAI / DeepSeek / Moonshot / Zhipu / Qwen / Ollama / custom … 25 in total); the profile name auto-fills from the preset and everything stays editable afterwards. Rename via 「改名」, remove via 「删除」.
+- **Blank = use the server default**: leaving Base URL, API Key, model, max output tokens, or thinking level empty falls back to the server env vars above, and each input's **placeholder shows the currently effective server value** — what you see is what gets used.
+- **Model supports image input (vision)**: only when ticked can you upload/paste reference images; images are then sent to that same model. Unticked disables image upload.
+- **Fetch model list from gateway**: calls `/api/models`, which forwards your current credentials to the endpoint's `GET /models` and lists the real selectable model IDs (no hard-coded guesses).
+
+The config lives in browser `localStorage` and is only sent to the server with a chat request.
 
 4. Run the development server:
 ```bash
@@ -163,27 +182,37 @@ The project ships with a `Dockerfile` and `docker-compose.yaml`; the image alrea
 
 **2. Configure environment variables**
 
-Copy the example config to a local config (`.env.local` is gitignored and never committed):
+The default model and API key are injected through **docker compose environment variables** — `docker-compose.yaml` only holds `${VAR}` references:
 
-```bash
-cp env.example .env.local
+```yaml
+services:
+  ai-draw-studio:
+    environment:
+      AI_BASE_URL: ${AI_BASE_URL}
+      AI_API_KEY: ${AI_API_KEY}
+      AI_MODEL: ${AI_MODEL}
+      AI_MAX_OUTPUT_TOKENS: ${AI_MAX_OUTPUT_TOKENS}
+      AI_THINKING_LEVEL: ${AI_THINKING_LEVEL}
+      AI_MODEL_SUPPORTS_VISION: ${AI_MODEL_SUPPORTS_VISION}
 ```
 
-Edit `.env.local` and fill in your model API:
+Values can come from either of these:
 
-```bash
-# Required: server-side default model config (used when the browser leaves fields blank)
-AI_BASE_URL="https://code-api.erix.vip/v1"   # or https://api.deepseek.com/v1 (any OpenAI-compatible endpoint)
-AI_API_KEY="sk-your-key"
-AI_MODEL="deepseek-v4-flash"
-AI_VISION_MODEL="deepseek-v4-flash-vision-exp"   # used by visual self-check / image reference; leave empty to disable
+- **Plain `docker compose`**: put a `.env` file in the project root (Compose reads it automatically for `${VAR}` interpolation); base it on `env.example`:
 
-# Optional: front-end defaults (inlined at build time; code defaults apply if unset)
-# NEXT_PUBLIC_AI_BASE_URL="https://code-api.erix.vip/v1"
-# NEXT_PUBLIC_AI_VISION_MODEL="deepseek-v4-flash-vision-exp"
-```
+  ```bash
+  cp env.example .env
+  # fill in AI_BASE_URL / AI_API_KEY / AI_MODEL / AI_THINKING_LEVEL ...
+  ```
 
-> See `env.example` for the full list. `AI_API_KEY` is read at runtime — restart the container after editing it; no image rebuild needed.
+- **Deploying with 1Panel**: fill these key/value pairs in the orchestration's **"Environment Variables" tab**. 1Panel will
+
+  1. write them into the project root `.env` (Compose's interpolation file);
+  2. normalize `docker-compose.yaml`'s `environment` into plain `${VAR}` references.
+
+  So **put your defaults in 1Panel's environment tab, not hard-coded in the compose file** — even `${VAR:-default}` gets rewritten by 1Panel.
+
+> See `env.example` for the full list. `AI_*` is read at runtime: after changing it just recreate the container with `docker compose up -d` — **no image rebuild needed**.
 
 **3. Build and start**
 
@@ -199,9 +228,9 @@ Visit http://localhost:6001
 
 ```bash
 docker compose logs -f          # view logs
-docker compose restart          # restart (after editing .env.local)
+docker compose up -d            # recreate the container after env changes (no --build)
 docker compose down             # stop and remove the container
-docker compose up -d --build    # rebuild after pulling new code
+docker compose up -d --build    # rebuild the image after pulling new code
 ```
 
 > The default port is `6001`; change it in the `ports` section of `docker-compose.yaml` (e.g. `"8080:6001"`).
@@ -263,20 +292,20 @@ This is a browser version of drawio-skill's "Step 5 Self-Check" — **letting th
 
 ```
 Diagram generated (display_diagram)
-  → ① self-check toggle ON & a vision model configured?
+  → ① self-check toggle ON & "model supports image input" ticked in Model Settings?
        ↓ yes
   → ② export PNG from the canvas (exportPng in contexts/diagram-context.tsx)
-  → ③ send the PNG to deepseek-v4-flash-vision-exp (/api/selfcheck)
+  → ③ send the PNG to the same model (/api/selfcheck)
        checks: overlaps / clipped labels / arrows missing targets /
                edges crossing nodes / off-canvas / edge-label overlaps
        → returns a JSON issue list
-  → ④ issues found? issues + a cell catalog go to the text model (/api/selfcheck-fix)
+  → ④ issues found? issues + a cell catalog go to the model (/api/selfcheck-fix)
        which emits id-based directives (move/nudge/relabel/restyle/delete)
        → lib/xml-edit.ts applies them deterministically → loop back to ② (max 2 rounds)
   → ⑤ feedback in chat: passed / auto-fixed N issues / issue list
 ```
 
-**Purpose**: a quality safety net — the text model "guesses" coordinates and tends to produce overlaps, clipped labels, and tangled edges; the vision model inspects the real render, catches visible problems, and attempts to fix them automatically.
+**Purpose**: a quality safety net — the text model "guesses" coordinates and tends to produce overlaps, clipped labels, and tangled edges; inspecting the real render catches visible problems, and the model then attempts to fix them automatically.
 
 **Limits**: detection is reliable; auto-fix is limited by the upstream model (~50-67% success per attempt, with 3 retries; on failure it degrades to listing the issues for manual fixing).
 

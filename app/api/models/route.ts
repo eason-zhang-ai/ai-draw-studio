@@ -7,17 +7,24 @@ interface ModelListResponse {
 export async function POST(req: Request) {
     try {
         const { modelConfig } = await req.json();
-        const baseUrl: string =
+        const baseUrl: string | undefined =
             (modelConfig?.baseUrl?.trim() as string | undefined) ||
-            process.env.OPENAI_BASE_URL ||
-            "https://api.openai.com/v1";
+            process.env.AI_BASE_URL ||
+            process.env.OPENAI_BASE_URL;
         const apiKey: string | undefined =
             (modelConfig?.apiKey?.trim() as string | undefined) ||
+            process.env.AI_API_KEY ||
             process.env.OPENAI_API_KEY;
 
         if (!apiKey) {
             return Response.json(
                 { error: "缺少 API Key，无法获取模型列表" },
+                { status: 400 }
+            );
+        }
+        if (!baseUrl) {
+            return Response.json(
+                { error: "缺少 Base URL，无法获取模型列表" },
                 { status: 400 }
             );
         }

@@ -48,3 +48,8 @@ LICENSE
 *.swp
 *.swo
 *~
+
+# Unrelated project checked out inside this repo (not part of the Next app).
+# Next's type check walks **/*.ts, so it must be excluded from the build
+# context to keep `next build` from failing on foreign Electron/Vue configs.
+RPA

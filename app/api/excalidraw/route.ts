@@ -8,7 +8,7 @@ import {
 import { buildExcalidrawSkillContext } from "@/lib/domain-skills";
 
 const DEFAULT_MAX_OUTPUT_TOKENS = 12_000;
-const MAX_OUTPUT_TOKENS_CAP = 24_000;
+const MIN_OUTPUT_TOKENS = 2_000;
 const MAX_CONTEXT_MESSAGES = 8;
 
 export const maxDuration = 60;
@@ -102,15 +102,15 @@ ${getProfessionalDiagramGuidelines(lastMessageText)}
             }
         }
 
-        const { client, model, maxOutputTokens } = resolveModel(modelConfig);
-        const outputTokenBudget = Math.min(
-            Math.max(
-                2_000,
-                maxOutputTokens && Number.isFinite(maxOutputTokens)
-                    ? Math.floor(maxOutputTokens)
-                    : DEFAULT_MAX_OUTPUT_TOKENS
-            ),
-            MAX_OUTPUT_TOKENS_CAP
+        const { client, model, maxOutputTokens, providerOptions } =
+            resolveModel(modelConfig);
+        // No upper clamp — the operator sets the ceiling via
+        // AI_MAX_OUTPUT_TOKENS (docker/1Panel env).
+        const outputTokenBudget = Math.max(
+            MIN_OUTPUT_TOKENS,
+            maxOutputTokens && Number.isFinite(maxOutputTokens)
+                ? Math.floor(maxOutputTokens)
+                : DEFAULT_MAX_OUTPUT_TOKENS
         );
 
         const composedSystem = `${systemMessage}
@@ -124,6 +124,7 @@ ${buildExcalidrawSkillContext(lastMessageText)}`;
             messages: enhancedMessages,
             temperature: 0,
             maxOutputTokens: outputTokenBudget,
+            providerOptions,
             tools: {
                 display_excalidraw: {
                     description:

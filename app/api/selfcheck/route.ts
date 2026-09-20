@@ -15,7 +15,7 @@ export async function POST(req: Request) {
             return Response.json({ error: "缺少渲染图" }, { status: 400 });
         }
 
-        const { client, model } = resolveModel(modelConfig, { vision: true });
+        const { client, model, providerOptions } = resolveModel(modelConfig);
 
         const system = `You are a diagram quality reviewer. Inspect the rendered diagram image for visual defects.
 Respond ONLY with a JSON object in this exact shape:
@@ -46,6 +46,7 @@ Check for: overlapping shapes, clipped/truncated labels, arrows that miss their 
                     },
                 ],
                 maxOutputTokens: 2000,
+                providerOptions,
                 temperature: 0,
             });
             text = result.text || "";

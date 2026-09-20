@@ -6,9 +6,11 @@ export interface ModelConfig {
     apiKey?: string;
     baseUrl?: string;
     model?: string;
-    /** Vision model used when the request contains images. Empty = image upload disabled. */
-    visionModel?: string;
+    /** Whether the configured model accepts image (vision) input. False = image upload disabled. */
+    visionEnabled?: boolean;
     maxOutputTokens?: number;
+    /** Reasoning effort: none | minimal | low | medium | high. Empty = endpoint default. */
+    thinkingLevel?: string;
 }
 
 export interface ModelProfile {
@@ -25,23 +27,25 @@ interface ModelConfigContextValue {
     setActiveProfile: (id: string) => void;
     setConfig: (value: ModelConfig) => void;
     updateConfig: (value: Partial<ModelConfig>) => void;
-    createProfile: (name?: string) => void;
+    createProfile: (name?: string, configPatch?: Partial<ModelConfig>) => void;
     renameProfile: (id: string, name: string) => void;
     deleteProfile: (id: string) => void;
     reset: () => void;
 }
 
-const STORAGE_KEY = "ai-model-config-v2";
-const LEGACY_STORAGE_KEY = "ai-model-config";
+const STORAGE_KEY = "ai-model-config-v3";
+const LEGACY_STORAGE_KEY = "ai-model-config-v2"; // profiles array, visionEnabled era
+const LEGACY_STORAGE_KEY_V1 = "ai-model-config"; // single config, visionModel era
 
 export const defaultModelConfig: ModelConfig = {
     apiKey: "",
     baseUrl: "",
     model: "",
-    visionModel:
-        process.env.NEXT_PUBLIC_AI_VISION_MODEL ||
-        "deepseek-v4-flash-vision-exp",
+    // undefined = "not set explicitly" → falls back to the server default
+    // (env AI_MODEL_SUPPORTS_VISION).
+    visionEnabled: undefined,
     maxOutputTokens: undefined,
+    thinkingLevel: "",
 };
 
 const defaultProfile: ModelProfile = {
@@ -56,6 +60,20 @@ function generateId() {
     return `profile-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/**
+ * One-off migration from older schemas. A stored `visionEnabled: false` was
+ * the previous HARD-CODED default (not a deliberate user choice), so it is
+ * reset to `undefined` to fall back to the server env default
+ * (AI_MODEL_SUPPORTS_VISION). An explicit `true` is kept.
+ */
+function migrateVision(config?: ModelConfig): ModelConfig {
+    const next: ModelConfig = { ...(config || defaultModelConfig) };
+    if (next.visionEnabled === false) next.visionEnabled = undefined;
+    // v1 era stored `visionModel` (a string); it no longer exists.
+    delete (next as Record<string, unknown>).visionModel;
+    return next;
+}
+
 function loadInitialModelConfig() {
     const fallback = {
         profiles: [defaultProfile],
@@ -67,9 +85,10 @@ function loadInitialModelConfig() {
     }
 
     try {
-        const stored = localStorage.getItem(STORAGE_KEY);
-        if (stored) {
-            const parsed = JSON.parse(stored) as {
+        // v3 (current)
+        const current = localStorage.getItem(STORAGE_KEY);
+        if (current) {
+            const parsed = JSON.parse(current) as {
                 profiles: ModelProfile[];
                 activeProfileId: string;
             };
@@ -81,12 +100,31 @@ function loadInitialModelConfig() {
             }
         }
 
-        const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
-        if (legacy) {
-            const parsedLegacy = JSON.parse(legacy) as ModelConfig;
+        // v2 → v3 (profiles array; may carry the old hard-coded false)
+        const v2 = localStorage.getItem(LEGACY_STORAGE_KEY);
+        if (v2) {
+            const parsed = JSON.parse(v2) as {
+                profiles: ModelProfile[];
+                activeProfileId: string;
+            };
+            if (parsed?.profiles?.length) {
+                return {
+                    profiles: parsed.profiles.map((p) => ({
+                        ...p,
+                        config: migrateVision(p.config),
+                    })),
+                    activeProfileId: parsed.activeProfileId || parsed.profiles[0].id,
+                };
+            }
+        }
+
+        // v1 → v3 (single config from the visionModel era)
+        const v1 = localStorage.getItem(LEGACY_STORAGE_KEY_V1);
+        if (v1) {
+            const parsedLegacy = JSON.parse(v1) as ModelConfig;
             const migrated: ModelProfile = {
                 ...defaultProfile,
-                config: { ...defaultModelConfig, ...parsedLegacy },
+                config: migrateVision({ ...defaultModelConfig, ...parsedLegacy }),
             };
             return {
                 profiles: [migrated],
@@ -117,9 +155,43 @@ export function ModelConfigProvider({ children }: { children: React.ReactNode })
         }
     }, [profiles, activeProfileId]);
 
+    // Server default for the "model supports image input" toggle
+    // (env AI_MODEL_SUPPORTS_VISION). Used only when a profile hasn't
+    // explicitly set visionEnabled.
+    const [serverVision, setServerVision] = useState<boolean | null>(null);
+
+    useEffect(() => {
+        let cancelled = false;
+        fetch("/api/settings")
+            .then((res) => (res.ok ? res.json() : null))
+            .then((data) => {
+                if (!cancelled && data) {
+                    setServerVision(
+                        typeof data.visionEnabled === "boolean"
+                            ? data.visionEnabled
+                            : false
+                    );
+                }
+            })
+            .catch(() => {});
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
     const activeProfile = useMemo(() => {
         return profiles.find((p) => p.id === activeProfileId) || profiles[0];
     }, [profiles, activeProfileId]);
+
+    // Effective config: visionEnabled falls back to the server default when
+    // the profile hasn't set it explicitly.
+    const config = useMemo(() => {
+        const base = activeProfile?.config || defaultModelConfig;
+        if (base.visionEnabled !== undefined || serverVision === null) {
+            return base;
+        }
+        return { ...base, visionEnabled: serverVision };
+    }, [activeProfile, serverVision]);
 
     const value = useMemo<ModelConfigContextValue>(() => {
         const updateProfileList = (updater: (prev: ModelProfile[]) => ModelProfile[]) => {
@@ -127,7 +199,7 @@ export function ModelConfigProvider({ children }: { children: React.ReactNode })
         };
 
         return {
-            config: activeProfile?.config || defaultModelConfig,
+            config,
             profiles,
             activeProfileId: activeProfile?.id || defaultProfile.id,
             activeProfile: activeProfile || defaultProfile,
@@ -150,11 +222,15 @@ export function ModelConfigProvider({ children }: { children: React.ReactNode })
                     )
                 );
             },
-            createProfile: (name) => {
+            createProfile: (name, configPatch) => {
+                // Start from the active profile (keeps model / generation
+                // params) and let the caller override e.g. the base URL when
+                // the new profile targets a different endpoint.
+                const baseConfig = activeProfile?.config ?? defaultModelConfig;
                 const newProfile: ModelProfile = {
                     id: generateId(),
                     name: name?.trim() || `配置${profiles.length + 1}`,
-                    config: activeProfile?.config ? { ...activeProfile.config } : defaultModelConfig,
+                    config: { ...baseConfig, ...configPatch },
                 };
                 setProfiles((prev) => [...prev, newProfile]);
                 setActiveProfileId(newProfile.id);
@@ -178,7 +254,7 @@ export function ModelConfigProvider({ children }: { children: React.ReactNode })
                 setActiveProfileId(defaultProfile.id);
             },
         };
-    }, [activeProfile, activeProfileId, profiles]);
+    }, [activeProfile, activeProfileId, profiles, config]);
 
     return (
         <ModelConfigContext.Provider value={value}>

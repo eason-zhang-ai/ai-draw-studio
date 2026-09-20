@@ -254,7 +254,7 @@ export default function ChatPanel() {
                         output: "生成完成.",
                     });
                     // Auto self-check after the diagram lands on the canvas.
-                    if (selfCheckEnabled && modelConfig.visionModel) {
+                    if (selfCheckEnabled && modelConfig.visionEnabled) {
                         setTimeout(() => {
                             onFetchChart(3000)
                                 .then((xml) => runSelfCheck(setMessages, xml))
@@ -526,10 +526,10 @@ export default function ChatPanel() {
                     <button
                         type="button"
                         onClick={toggleSelfCheck}
-                        disabled={selfCheckBusy || !modelConfig.visionModel}
+                        disabled={selfCheckBusy || !modelConfig.visionEnabled}
                         title={
-                            !modelConfig.visionModel
-                                ? "未配置视觉模型，无法自检"
+                            !modelConfig.visionEnabled
+                                ? "未勾选模型支持 vision，无法自检"
                                 : selfCheckEnabled
                                   ? "视觉自检已开启（生成后自动检查布局）"
                                   : "视觉自检已关闭"
@@ -573,7 +573,7 @@ export default function ChatPanel() {
                     onRequestHistory={() => setShowHistory(true)}
                     historyAvailable={diagramHistory.length > 0}
                     enableHistoryControls
-                    visionEnabled={!!modelConfig.visionModel}
+                    visionEnabled={!!modelConfig.visionEnabled}
                 />
             </CardFooter>
             <HistoryDialog

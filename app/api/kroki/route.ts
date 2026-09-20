@@ -123,13 +123,14 @@ ${getProfessionalDiagramGuidelines(lastMessageText)}
             }
         }
 
-        const { client, model } = resolveModel(modelConfig);
+        const { client, model, providerOptions } = resolveModel(modelConfig);
 
         const result = streamText({
             system: systemMessage,
             model: client.chat(model),
             messages: enhancedMessages,
             temperature: 0.2,
+            providerOptions,
             tools: {
                 display_kroki: {
                     description:

@@ -9,17 +9,15 @@ import { searchShapesBatch, searchAiIcons } from "@/lib/shape-search";
 
 export const maxDuration = 90
 const MAX_CONTEXT_MESSAGES = 3;
-// 8k bounds worst-case cost/latency when a reasoning model degenerates into
-// a long thinking loop (each degenerate attempt burns the full budget);
-// most diagrams fit well under this. The model config dialog can raise it
-// per request for extra-large diagrams.
 const DEFAULT_MAX_OUTPUT_TOKENS = 8000;
-const MAX_OUTPUT_TOKENS = 32000;
+const MIN_OUTPUT_TOKENS = 1000;
 const MAX_XML_CONTEXT_CHARS = 4000;
 
+// No upper clamp: the ceiling belongs to the operator (AI_MAX_OUTPUT_TOKENS
+// via the docker/1Panel env). A floor is kept only to reject nonsense values.
 function clampMaxOutputTokens(value?: number) {
   if (!value) return DEFAULT_MAX_OUTPUT_TOKENS;
-  return Math.min(Math.max(value, 1000), MAX_OUTPUT_TOKENS);
+  return Math.max(value, MIN_OUTPUT_TOKENS);
 }
 
 function compactXmlContext(xml?: string) {
@@ -106,11 +104,12 @@ ${lastMessageText}
       }
     }
 
-    // Route to the vision model when the request carries images.
+    // Image parts (if any) are sent to the SAME model — whether it accepts
+    // images is the operator's call (client "supports vision" flag), not a
+    // separate model id.
     const hasImages = imageParts.length > 0;
-    const { client, model, maxOutputTokens } = resolveModel(modelConfig, {
-      vision: hasImages,
-    });
+    const { client, model, maxOutputTokens, thinkingLevel, providerOptions } =
+      resolveModel(modelConfig);
 
     const composedSystem = `${FAST_DRAWIO_SYSTEM_MESSAGE}
 
@@ -128,6 +127,7 @@ ${buildDrawioSkillContext(lastMessageText)}`;
       compactXmlChars: compactXmlContext(xml).length,
       messages: messages.length,
       maxOutputTokens: effectiveMaxOutputTokens,
+      thinkingLevel: thinkingLevel ?? "auto",
     });
 
     const result = streamText({
@@ -135,6 +135,7 @@ ${buildDrawioSkillContext(lastMessageText)}`;
       model: client.chat(model),
       messages: enhancedMessages,
       maxOutputTokens: effectiveMaxOutputTokens,
+      providerOptions,
       // No retries: a degenerate reasoning loop would just run twice.
       maxRetries: 0,
       onChunk: () => {

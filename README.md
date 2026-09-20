@@ -4,10 +4,11 @@
 
 > **本项目是 [shenpeiheng/ai-smart-draw](https://github.com/shenpeiheng/ai-smart-draw)（MIT）的 fork**，在此基础上做了以下增强：
 >
-> - **DeepSeek V4 系列模型支持**：`deepseek-v4-flash`（快速）、`deepseek-v4-pro`（强力）、`deepseek-v4-flash-vision-exp`（视觉），支持自定义 API 端点（OpenAI 兼容），多配置管理 + 能力路由（含图片的请求自动切到视觉模型）。
+> - **DeepSeek V4 系列模型支持**：`deepseek-v4-flash`、`deepseek-v4-pro`、`deepseek-v4-flash-vision-exp` 等，支持自定义 API 端点（OpenAI 兼容）、多套配置档案（localStorage）与**单一模型 + 图片能力开关**（不再为图片单独指定模型）。默认模型由环境变量 `AI_MODEL` 决定。
 > - **注入 [Agents365-ai/drawio-skill](https://github.com/Agents365-ai/drawio-skill)（MIT）内容资产**：`skills/drawio-skill/` 的 XML 规范 / 图表类型预设 / 样式速查随请求注入模型上下文；`search_shapes`（10,446 个官方形状精确 style）与 `ai_icon`（AI/LLM 品牌 logo）两个服务端工具，杜绝"猜 shape 变空白框"。
 > - **借鉴 [mermaid2img Skill Hub](https://mermaid2img.com/zh-CN/skills) 实践**：Mermaid 模式内置「适配移动端 / 优化可读性 / 架构审查」快捷操作，其结构优先的精修顺序与审查协议来自 hub 实测收录的 `mermaid-preview-refinement` 与 `mermaid-architecture-review`；反幻觉与 12 节点拆分规则借鉴 `mermaid-diagram-builder`（源码见 [mermaid2img/mermaid-skills](https://github.com/mermaid2img/mermaid-skills)）。
-> - **视觉开关**：配置视觉模型后启用图片上传/粘贴，未配置时自动禁用。
+> - **视觉能力开关**：在模型设置里勾选「模型支持图片输入」后启用图片上传/粘贴；未勾选则自动禁用。
+> - **思考等级可调**：环境变量 `AI_THINKING_LEVEL` 设默认值（`none`/`minimal`/`low`/`medium`/`high`），也能在模型设置表单里按浏览器覆盖 —— 用于抑制推理模型"想太久"导致的退化与延迟。
 >
 > 上游在线演示：https://ai-smart-draw.vercel.app/
 
@@ -101,26 +102,44 @@ yarn install
 cp env.example .env.local
 ```
 
-然后使用您的 OpenAI 凭据更新 `.env.local`。
+然后填入你的模型服务凭据。
 
-### OpenAI 配置
+### 模型服务配置
 
-- `OPENAI_API_KEY` (必需): 来自您 OpenAI 账户的密钥
-- `OPENAI_MODEL` (可选): 默认为 `gpt-4o-mini`，如果您喜欢其他已发布的变体可以覆盖
-- `OPENAI_BASE_URL` (可选): 默认为 `https://api.openai.com/v1`；如果您自托管代理或网关，请设置此项
+所有变量都支持 `AI_*`（推荐）与 `OPENAI_*`（兜底）两种前缀，`AI_*` 优先。
+
+| 变量 | 必填 | 说明 |
+| --- | --- | --- |
+| `AI_BASE_URL` | 是 | OpenAI 兼容端点，如 `https://code-api.erix.vip/v1`、`https://api.deepseek.com/v1` |
+| `AI_API_KEY` | 是 | 端点密钥 |
+| `AI_MODEL` | 是 | 默认模型。绘图与图片输入**共用同一个模型** |
+| `AI_MAX_OUTPUT_TOKENS` | 否 | 最大输出 token。代码内**无上限**，实际上限取决于模型/端点自身 |
+| `AI_THINKING_LEVEL` | 否 | 思考等级 `none` / `minimal` / `low` / `medium` / `high`；留空 = 沿用端点默认 |
+| `AI_MODEL_SUPPORTS_VISION` | 否 | `true` / `false`：默认模型是否支持图片输入；是前端「模型支持图片输入」开关的服务端默认值 |
 
 示例片段：
 ```bash
-OPENAI_API_KEY="sk-your-key"
-# OPENAI_MODEL="gpt-4o-mini"
-# OPENAI_BASE_URL="https://api.openai.com/v1"
+AI_BASE_URL="https://code-api.erix.vip/v1"
+AI_API_KEY="sk-your-key"
+AI_MODEL="deepseek-v4-flash"
+AI_MAX_OUTPUT_TOKENS="384000"
+AI_THINKING_LEVEL="low"
+AI_MODEL_SUPPORTS_VISION="true"
 ```
 
-#### 可选：从浏览器配置
+> `AI_*` 是**服务端运行时**变量：改完重启容器即可，**无需重建镜像**。
+> 本项目不使用 `NEXT_PUBLIC_*` —— 那类变量在 `next build` 时就被内联进浏览器包，运行时修改无效。
 
-- 点击任何工作区标题中的 **模型设置** 按钮，覆盖当前浏览器的 API 密钥、基础 URL 或模型。值存储在 `localStorage` 中，仅在您提交聊天请求时发送到服务器
-- 留空任何字段以回退到上述服务器端环境变量
-- 使用 **拉取列表** 按钮调用 `/api/models` 助手，将当前凭据转发到 `GET /models` 并列出可选择的模型 ID
+#### 可选：从浏览器配置（模型设置）
+
+点击工作区标题栏的 **模型设置**（齿轮图标）：
+
+- **配置档案**：可创建多套配置（例如「生产网关」「本地 Ollama」），每套各自保存 Base URL / API Key / 模型 / 生成参数。点「**新增配置**」会先弹出对话框让你**从预设端点里选一个起点**（服务端默认 / Erix 网关 / OpenAI / DeepSeek / Moonshot / 智谱 / 通义千问 / Ollama / 自定义 … 共 25 个），名称会跟着预设自动填好，创建后仍可随意修改；**改名**重命名、**删除**移除。
+- **留空 = 使用服务端默认**：Base URL、API Key、模型名、最大输出 Token、思考等级留空时都会回退到上面的服务端环境变量，且输入框的 **placeholder 显示的就是当前服务端实际生效值**，所见即所得。
+- **模型支持图片输入（vision）**：勾选后才允许上传/粘贴参考图片，图片会随请求发给当前模型；不勾选则禁用图片上传。
+- **从网关拉取模型列表**：调用 `/api/models`，用当前凭据请求端点的 `GET /models`，列出真实可选的模型 ID（不做任何硬编码猜测）。
+
+配置保存在浏览器 `localStorage`，仅在提交聊天请求时随请求发送到服务端。
 
 4. 运行开发服务器：
 ```bash
@@ -162,27 +181,37 @@ npm run dev
 
 **2. 配置环境变量**
 
-复制示例配置为本地配置（`.env.local` 已被 gitignore，不会提交）：
+默认模型与 API Key 通过 **docker compose 的环境变量**注入，`docker-compose.yaml` 只做 `${VAR}` 引用：
 
-```bash
-cp env.example .env.local
+```yaml
+services:
+  ai-draw-studio:
+    environment:
+      AI_BASE_URL: ${AI_BASE_URL}
+      AI_API_KEY: ${AI_API_KEY}
+      AI_MODEL: ${AI_MODEL}
+      AI_MAX_OUTPUT_TOKENS: ${AI_MAX_OUTPUT_TOKENS}
+      AI_THINKING_LEVEL: ${AI_THINKING_LEVEL}
+      AI_MODEL_SUPPORTS_VISION: ${AI_MODEL_SUPPORTS_VISION}
 ```
 
-编辑 `.env.local`，填入你的模型 API：
+值的来源有两种：
 
-```bash
-# 必填：服务端默认模型配置（前端不填时使用）
-AI_BASE_URL="https://code-api.erix.vip/v1"   # 或 https://api.deepseek.com/v1 等 OpenAI 兼容端点
-AI_API_KEY="sk-你的key"
-AI_MODEL="deepseek-v4-flash"
-AI_VISION_MODEL="deepseek-v4-flash-vision-exp"   # 视觉自检/图片参考用，可留空禁用
+- **直接使用 `docker compose`**：在项目根目录放一个 `.env`（Compose 会自动读取并用于 `${VAR}` 插值），内容参考 `env.example`：
 
-# 可选：前端默认展示（构建时内联；不设则用代码内置默认值）
-# NEXT_PUBLIC_AI_BASE_URL="https://code-api.erix.vip/v1"
-# NEXT_PUBLIC_AI_VISION_MODEL="deepseek-v4-flash-vision-exp"
-```
+  ```bash
+  cp env.example .env
+  # 填入 AI_BASE_URL / AI_API_KEY / AI_MODEL / AI_THINKING_LEVEL ...
+  ```
 
-> 完整变量说明见 `env.example`。`AI_API_KEY` 是运行时读取的，改后只需重启容器，无需重新构建镜像。
+- **用 1Panel 部署**：在编排的 **「环境变量」标签页** 里填这些键值对即可。1Panel 会
+
+  1. 把它们写入项目根目录的 `.env`（Compose 的插值文件）；
+  2. 把 `docker-compose.yaml` 的 `environment` 规范化为纯 `${VAR}` 引用。
+
+  所以**默认值请配在 1Panel 的环境变量标签页，不要硬写进 compose 文件** —— 写成 `${VAR:-默认值}` 也会被 1Panel 重写掉。
+
+> 完整变量说明见 `env.example`。`AI_*` 是运行时读取的：改后只需 `docker compose up -d` 重建容器，**无需重新构建镜像**。
 
 **3. 构建并启动**
 
@@ -198,9 +227,9 @@ docker compose up -d --build
 
 ```bash
 docker compose logs -f          # 查看日志
-docker compose restart          # 重启（改 .env.local 后）
+docker compose up -d            # 改环境变量后重建容器（不需要 --build）
 docker compose down             # 停止并删除容器
-docker compose up -d --build    # 更新代码后重建
+docker compose up -d --build    # 更新代码后重建镜像
 ```
 
 > 端口默认 `6001`，可在 `docker-compose.yaml` 的 `ports` 中修改（如 `"8080:6001"`）。
@@ -262,19 +291,19 @@ skills/               # vendor 的 Agents365-ai 图表 skill 家族（MIT）
 
 ```
 生成完图表(display_diagram)
-  → ① 视觉自检开关开着 & 配了视觉模型？
+  → ① 视觉自检开关开着 & 模型设置里勾选了「模型支持图片输入」？
        ↓ 是
   → ② 从画布导出 PNG（contexts/diagram-context.tsx 的 exportPng）
-  → ③ PNG 发给 deepseek-v4-flash-vision-exp（/api/selfcheck）
+  → ③ PNG 发给同一个模型（/api/selfcheck）
        检查：节点重叠 / 标签截断 / 箭头脱靶 / 连线穿节点 / 越界 / 边标签重叠
        → 返回 JSON 问题清单
-  → ④ 有问题？问题 + 单元格目录发给文本模型（/api/selfcheck-fix）
+  → ④ 有问题？问题 + 单元格目录发给模型（/api/selfcheck-fix）
        生成 id 级修复指令（move/nudge/relabel/restyle/delete）
        → lib/xml-edit.ts 确定性应用 → 回到②复查（最多 2 轮）
   → ⑤ 聊天里反馈：自检通过 / 已自动修复 N 处 / 列出问题清单
 ```
 
-**作用**：质量兜底——文本模型靠"脑补"坐标，容易重叠/截断/连线乱；视觉模型用真实渲染图挑错，抓到的是肉眼可见的问题，并尝试自动修复。
+**作用**：质量兜底——文本模型靠"脑补"坐标，容易重叠/截断/连线乱；用真实渲染图挑错，抓到的是肉眼可见的问题，并尝试自动修复。
 
 **边界**：检测这半段可靠；自动修复这半段受上游模型限制（约 50-67% 成功率，带 3 次重试，失败时降级为列出问题清单供手动修改）。
 

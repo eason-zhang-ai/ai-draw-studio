@@ -21,7 +21,7 @@ export async function POST(req: Request) {
             return Response.json({ xml });
         }
 
-        const { client, model } = resolveModel(modelConfig);
+        const { client, model, providerOptions } = resolveModel(modelConfig);
 
         const catalog = buildCatalog(xml);
 
@@ -49,6 +49,7 @@ Output the JSON array of fix directives now.`;
                 system,
                 messages: [{ role: "user", content: user }],
                 maxOutputTokens: 2000,
+                providerOptions,
                 temperature: 0,
             });
             text = result.text || "";

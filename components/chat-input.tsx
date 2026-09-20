@@ -26,7 +26,7 @@ interface ChatInputProps {
     historyAvailable?: boolean;
     enableHistoryControls?: boolean;
     historyTooltip?: string;
-    /** Whether image upload is allowed (requires a vision model). */
+    /** Whether image upload is allowed (requires the configured model to accept image input). */
     visionEnabled?: boolean;
 }
 
@@ -221,7 +221,7 @@ export function ChatInput({
                         title={
                             visionEnabled
                                 ? "上传参考图片或代码/SQL/Terraform/OpenAPI 文件"
-                                : "上传代码/SQL/Terraform/OpenAPI 文件（图片需先配置视觉模型）"
+                                : "上传代码/SQL/Terraform/OpenAPI 文件（图片需先在模型设置里勾选“模型支持图片输入”）"
                         }
                     >
                         <ImageIcon className="h-4 w-4" />
