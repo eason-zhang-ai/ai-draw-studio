@@ -26,5 +26,7 @@ export async function GET() {
         visionEnabled: defaults.visionEnabled,
         // env AI_CONTEXT_LENGTH — input token budget; null = no trimming
         contextLength: defaults.contextLength ?? null,
+        // env AI_PROGRESSIVE_DRAW — client-side "draw on the canvas" animation
+        progressiveDraw: defaults.progressiveDraw,
     });
 }

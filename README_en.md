@@ -118,6 +118,7 @@ Every variable supports both the `AI_*` (preferred) and `OPENAI_*` (fallback) pr
 | `AI_CONTEXT_LENGTH` | no | Input token budget (rough estimate). Empty = no trimming, model default window (measured ≥250K); when set, history / diagram context is trimmed to fit |
 | `AI_THINKING_LEVEL` | no | Reasoning effort `none` / `minimal` / `low` / `medium` / `high`; empty = keep the endpoint default |
 | `AI_MODEL_SUPPORTS_VISION` | no | `true` / `false`: whether the default model accepts image input; server default for the client's "model supports image input" toggle |
+| `AI_PROGRESSIVE_DRAW` | no | `true` (default) / `false`: **progressive canvas drawing**. Purely client-side (the model still returns the whole scene in one call and the front end reveals it in batches), so it costs **no extra tokens**; currently applies to the Excalidraw panel |
 
 Example snippet:
 ```bash

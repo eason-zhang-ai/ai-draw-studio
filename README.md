@@ -117,6 +117,7 @@ cp env.example .env.local
 | `AI_CONTEXT_LENGTH` | 否 | 输入上下文预算（token，粗略估算）。留空 = 不裁剪，用模型默认窗口（实测 ≥250K）；设置后按预算裁剪历史消息/图表上下文 |
 | `AI_THINKING_LEVEL` | 否 | 思考等级 `none` / `minimal` / `low` / `medium` / `high`；留空 = 沿用端点默认 |
 | `AI_MODEL_SUPPORTS_VISION` | 否 | `true` / `false`：默认模型是否支持图片输入；是前端「模型支持图片输入」开关的服务端默认值 |
+| `AI_PROGRESSIVE_DRAW` | 否 | `true`（默认）/ `false`：画布**渐进绘制**动画。纯前端行为（模型仍一次性返回完整场景，前端分批上屏），**不消耗额外 token**；目前作用于 Excalidraw 面板 |
 
 示例片段：
 ```bash
