@@ -16,9 +16,11 @@ import { useGraphviz } from "@/contexts/graphviz-context";
 import { ModeSelector } from "@/components/mode-selector";
 import { ModelConfigDialog } from "@/components/model-config-dialog";
 import { useModelConfig } from "@/contexts/model-config-context";
+import { DefinitionHistoryDialog } from "@/components/definition-history-dialog";
 
 export default function GraphvizChatPanel() {
-    const { definition, clearDefinition } = useGraphviz();
+    const { definition, history, setDefinition, clearDefinition } = useGraphviz();
+    const [showHistory, setShowHistory] = useState(false);
     const [files, setFiles] = useState<File[]>([]);
     const [input, setInput] = useState("");
     const { config: modelConfig } = useModelConfig();
@@ -118,9 +120,26 @@ export default function GraphvizChatPanel() {
                     }}
                     files={files}
                     onFileChange={handleFileChange}
-                    enableHistoryControls={false}
+                    enableHistoryControls
+                    historyAvailable={history.length > 0}
+                    onRequestHistory={() => setShowHistory(true)}
+                    historyTooltip="查看历史版本"
                 />
             </CardFooter>
+            <DefinitionHistoryDialog
+                open={showHistory}
+                onOpenChange={setShowHistory}
+                title="Graphviz 历史版本"
+                language="dot"
+                entries={history.map((entry) => ({
+                    id: entry.id,
+                    value: entry.definition,
+                    summary: entry.summary,
+                    createdAt: entry.createdAt,
+                }))}
+                currentValue={definition}
+                onRestore={setDefinition}
+            />
         </Card>
     );
 }

@@ -71,6 +71,9 @@ const PlantUMLContext = createContext<PlantUMLContextValue | undefined>(
     undefined
 );
 
+/** 只保留最近 N 个版本，避免历史无限增长。 */
+const MAX_HISTORY_ENTRIES = 100;
+
 function createEntry(
     definition: string,
     summary?: string
@@ -98,7 +101,15 @@ export function PlantUMLProvider({ children }: { children: React.ReactNode }) {
         (nextDefinition: string, summary?: string) => {
             if (!nextDefinition.trim()) return;
             setDefinitionState(nextDefinition);
-            setHistory((prev) => [...prev, createEntry(nextDefinition, summary)]);
+            setHistory((prev) => {
+                // streaming 期间同一内容会被反复提交，只在内容变化时记一条
+                if (prev[prev.length - 1]?.definition === nextDefinition) {
+                    return prev;
+                }
+                return [...prev, createEntry(nextDefinition, summary)].slice(
+                    -MAX_HISTORY_ENTRIES
+                );
+            });
         },
         []
     );

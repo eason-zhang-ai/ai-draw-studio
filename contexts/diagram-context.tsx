@@ -25,6 +25,24 @@ interface DiagramContextType {
 
 const DiagramContext = createContext<DiagramContextType | undefined>(undefined);
 
+/**
+ * Count the draw.io cells rendered inside an exported `xmlsvg` data URL.
+ * An untouched canvas only contains the id=0 / id=1 skeleton (2 cells) and
+ * exports as a 1x1 SVG, which is useless as a history entry AND renders as
+ * a blank thumbnail — restoring it just wipes the canvas.
+ */
+function countSvgCells(dataUrl: unknown): number {
+    if (typeof dataUrl !== "string") return Number.MAX_SAFE_INTEGER;
+    try {
+        const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+        const svg = atob(base64);
+        return (svg.match(/data-cell-id=/g) || []).length;
+    } catch {
+        // Unparseable export: don't filter it out (better to keep than lose).
+        return Number.MAX_SAFE_INTEGER;
+    }
+}
+
 export function DiagramProvider({ children }: { children: React.ReactNode }) {
     const [chartXML, setChartXML] = useState<string>("");
     const [latestSvg, setLatestSvg] = useState<string>("");
@@ -152,13 +170,24 @@ export function DiagramProvider({ children }: { children: React.ReactNode }) {
         if (exportPurpose === 'chat') {
             setChartXML(extractedXML);
             setLatestSvg(data.data);
-            setDiagramHistory((prev) => [
-                ...prev,
-                {
-                    svg: data.data,
-                    xml: extractedXML,
-                },
-            ]);
+            setDiagramHistory((prev) => {
+                // The history entry is the canvas snapshot taken BEFORE the
+                // turn runs. On the very first generation the canvas is still
+                // empty, so that snapshot would be a blank 1x1 SVG — skip it.
+                if (countSvgCells(data.data) <= 2) return prev;
+                // The self-check (and other export-triggered paths) can export
+                // the same unchanged canvas again; don't stack duplicates.
+                if (prev.length > 0 && prev[prev.length - 1].xml === extractedXML) {
+                    return prev;
+                }
+                return [
+                    ...prev,
+                    {
+                        svg: data.data,
+                        xml: extractedXML,
+                    },
+                ];
+            });
         }
         
         // 对于聊天导出，通过 resolver 返回结果

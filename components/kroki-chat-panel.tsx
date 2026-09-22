@@ -17,9 +17,11 @@ import { useKroki } from "@/contexts/kroki-context";
 import { ModeSelector } from "@/components/mode-selector";
 import { ModelConfigDialog } from "@/components/model-config-dialog";
 import { useModelConfig } from "@/contexts/model-config-context";
+import { DefinitionHistoryDialog } from "@/components/definition-history-dialog";
 
 export default function KrokiChatPanel() {
-    const { definition, clearDefinition } = useKroki();
+    const { definition, history, setDefinition, clearDefinition } = useKroki();
+    const [showHistory, setShowHistory] = useState(false);
     const [files, setFiles] = useState<File[]>([]);
     const [input, setInput] = useState("");
     const { config: modelConfig } = useModelConfig();
@@ -119,9 +121,26 @@ export default function KrokiChatPanel() {
                     }}
                     files={files}
                     onFileChange={handleFileChange}
-                    enableHistoryControls={false}
+                    enableHistoryControls
+                    historyAvailable={history.length > 0}
+                    onRequestHistory={() => setShowHistory(true)}
+                    historyTooltip="查看历史版本"
                 />
             </CardFooter>
+            <DefinitionHistoryDialog
+                open={showHistory}
+                onOpenChange={setShowHistory}
+                title="Kroki 历史版本"
+                language="kroki"
+                entries={history.map((entry) => ({
+                    id: entry.id,
+                    value: entry.definition,
+                    summary: entry.summary,
+                    createdAt: entry.createdAt,
+                }))}
+                currentValue={definition}
+                onRestore={setDefinition}
+            />
         </Card>
     );
 }

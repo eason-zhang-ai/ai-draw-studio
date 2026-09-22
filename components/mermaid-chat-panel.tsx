@@ -17,6 +17,7 @@ import { useMermaid } from "@/contexts/mermaid-context";
 import { ModeSelector } from "@/components/mode-selector";
 import { ModelConfigDialog } from "@/components/model-config-dialog";
 import { useModelConfig } from "@/contexts/model-config-context";
+import { DefinitionHistoryDialog } from "@/components/definition-history-dialog";
 
 // Quick actions for the current diagram, aligned with the mermaid2img
 // skill hub guidance (preview refinement + architecture review).
@@ -39,7 +40,8 @@ const QUICK_ACTIONS = [
 ];
 
 export default function MermaidChatPanel() {
-    const { definition, clearDefinition } = useMermaid();
+    const { definition, history, setDefinition, clearDefinition } = useMermaid();
+    const [showHistory, setShowHistory] = useState(false);
     const [files, setFiles] = useState<File[]>([]);
     const [input, setInput] = useState("");
     const { config: modelConfig } = useModelConfig();
@@ -153,9 +155,26 @@ export default function MermaidChatPanel() {
                     }}
                     files={files}
                     onFileChange={handleFileChange}
-                    enableHistoryControls={false}
+                    enableHistoryControls
+                    historyAvailable={history.length > 0}
+                    onRequestHistory={() => setShowHistory(true)}
+                    historyTooltip="查看历史版本"
                 />
             </CardFooter>
+            <DefinitionHistoryDialog
+                open={showHistory}
+                onOpenChange={setShowHistory}
+                title="Mermaid 历史版本"
+                language="mermaid"
+                entries={history.map((entry) => ({
+                    id: entry.id,
+                    value: entry.definition,
+                    summary: entry.summary,
+                    createdAt: entry.createdAt,
+                }))}
+                currentValue={definition}
+                onRestore={setDefinition}
+            />
         </Card>
     );
 }
