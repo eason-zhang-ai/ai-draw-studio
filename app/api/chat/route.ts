@@ -6,26 +6,31 @@ import {
 } from "@/lib/diagram-prompt-guidelines";
 import { buildDrawioSkillContext } from "@/lib/skill-assets";
 import { searchShapesBatch, searchAiIcons } from "@/lib/shape-search";
+import {
+  estimateTokens,
+  budgetMessages,
+  messageTokens,
+  type BudgetableMessage,
+} from "@/lib/context-budget";
 
 export const maxDuration = 90
 const MAX_CONTEXT_MESSAGES = 3;
-const DEFAULT_MAX_OUTPUT_TOKENS = 8000;
 const MIN_OUTPUT_TOKENS = 1000;
 const MAX_XML_CONTEXT_CHARS = 4000;
 
-// No upper clamp: the ceiling belongs to the operator (AI_MAX_OUTPUT_TOKENS
-// via the docker/1Panel env). A floor is kept only to reject nonsense values.
+// Unset = don't send max_tokens at all (the model's own default applies).
+// A floor is kept only to reject nonsense values.
 function clampMaxOutputTokens(value?: number) {
-  if (!value) return DEFAULT_MAX_OUTPUT_TOKENS;
+  if (!value) return undefined;
   return Math.max(value, MIN_OUTPUT_TOKENS);
 }
 
-function compactXmlContext(xml?: string) {
+function compactXmlContext(xml?: string, maxChars = MAX_XML_CONTEXT_CHARS) {
   if (!xml) return "";
-  if (xml.length <= MAX_XML_CONTEXT_CHARS) return xml;
+  if (xml.length <= maxChars) return xml;
 
-  const headLength = Math.floor(MAX_XML_CONTEXT_CHARS * 0.65);
-  const tailLength = MAX_XML_CONTEXT_CHARS - headLength;
+  const headLength = Math.floor(maxChars * 0.65);
+  const tailLength = maxChars - headLength;
 
   return `${xml.slice(0, headLength)}
 
@@ -63,53 +68,23 @@ export async function POST(req: Request) {
     // Extract image parts from the last message
     const imageParts = lastMessage.parts?.filter((part: any) => part.type === 'image') || [];
 
-    const formattedTextContent = `
-Current diagram XML:
-"""xml
-${compactXmlContext(xml)}
-"""
-User input:
-"""md
-${lastMessageText}
-"""
-
-`;
-
-    // Convert UIMessages to ModelMessages and add system message
+    // Convert UIMessages to ModelMessages
     const modelMessages = convertToModelMessages(recentMessages);
-    let enhancedMessages = [...modelMessages];
-
-    // Update the last message with formatted content if it's a user message
-    if (enhancedMessages.length >= 1) {
-      const lastModelMessage = enhancedMessages[enhancedMessages.length - 1];
-      if (lastModelMessage.role === 'user') {
-        // Build content array with text and image parts
-        const contentParts: any[] = [
-          { type: 'text', text: formattedTextContent }
-        ];
-
-        // Add image parts back
-        for (const imagePart of imageParts) {
-          contentParts.push({
-            type: 'image',
-            image: imagePart.image,
-            mimeType: imagePart.mediaType
-          });
-        }
-
-        enhancedMessages = [
-          ...enhancedMessages.slice(0, -1),
-          { ...lastModelMessage, content: contentParts }
-        ];
-      }
-    }
+    const historyModelMessages = modelMessages.slice(0, -1);
+    const lastModelMessage = modelMessages[modelMessages.length - 1];
 
     // Image parts (if any) are sent to the SAME model — whether it accepts
     // images is the operator's call (client "supports vision" flag), not a
     // separate model id.
     const hasImages = imageParts.length > 0;
-    const { client, model, maxOutputTokens, thinkingLevel, providerOptions } =
-      resolveModel(modelConfig);
+    const {
+      client,
+      model,
+      maxOutputTokens,
+      thinkingLevel,
+      contextLength,
+      providerOptions,
+    } = resolveModel(modelConfig);
 
     const composedSystem = `${FAST_DRAWIO_SYSTEM_MESSAGE}
 
@@ -118,15 +93,101 @@ The rules below come from the drawio-skill knowledge base. Follow them for XML s
 
 ${buildDrawioSkillContext(lastMessageText)}`;
 
+    // Context-length budget (front-end form > env AI_CONTEXT_LENGTH > no
+    // trimming). Fixed costs first (system + user text + images), then
+    // history gets ≤40% of the remainder, and the XML context takes the rest.
+    let xmlForContext = typeof xml === "string" ? xml : "";
+    let historyMessages = historyModelMessages;
+    if (contextLength) {
+      const systemTokens = estimateTokens(composedSystem);
+      const userTokens = estimateTokens(lastMessageText);
+      const imageTokens = imageParts.length * 1000;
+      let remaining = Math.max(
+        0,
+        contextLength - systemTokens - userTokens - imageTokens
+      );
+      const historyBudget = Math.floor(remaining * 0.4);
+      historyMessages = budgetMessages(historyMessages, historyBudget);
+      const historyUsed = historyMessages.reduce(
+        (sum, m) => sum + messageTokens(m as BudgetableMessage),
+        0
+      );
+      const xmlTokens = Math.max(0, remaining - historyUsed);
+      // tokens → chars (≈3 chars/token for mixed CJK/Latin; conservative)
+      const xmlCharBudget = Math.min(
+        MAX_XML_CONTEXT_CHARS,
+        Math.max(0, Math.floor(xmlTokens * 3))
+      );
+      xmlForContext = compactXmlContext(
+        xmlForContext,
+        Math.max(200, xmlCharBudget)
+      );
+    }
+
+    const formattedTextContent = `
+Current diagram XML:
+"""xml
+${compactXmlContext(xmlForContext)}
+"""
+User input:
+"""md
+${lastMessageText}
+"""
+
+`;
+
+    // The last message carries the formatted content + any images.
+    let enhancedMessages = [...historyMessages];
+    if (lastModelMessage?.role === 'user') {
+      const contentParts: any[] = [
+        { type: 'text', text: formattedTextContent },
+      ];
+      for (const imagePart of imageParts) {
+        contentParts.push({
+          type: 'image',
+          image: imagePart.image,
+          mimeType: imagePart.mediaType,
+        });
+      }
+      enhancedMessages = [
+        ...historyMessages,
+        { ...lastModelMessage, content: contentParts },
+      ];
+    } else {
+      enhancedMessages = [...historyMessages, lastModelMessage];
+    }
+
     let firstChunkLogged = false;
+    // The fullStream's `finish` part carries no usage, but each
+    // `finish-step` part does. Accumulate them (same semantics as
+    // totalUsage) and forward via messageMetadata — which is the only
+    // channel DefaultChatTransport passes through to the client.
+    let accUsage: {
+        inputTokens?: number;
+        outputTokens?: number;
+        totalTokens?: number;
+        reasoningTokens?: number;
+    } | null = null;
+    const addUsage = (u?: typeof accUsage) => {
+        if (!u) return;
+        accUsage = {
+            inputTokens: (accUsage?.inputTokens ?? 0) + (u.inputTokens ?? 0),
+            outputTokens: (accUsage?.outputTokens ?? 0) + (u.outputTokens ?? 0),
+            totalTokens: (accUsage?.totalTokens ?? 0) + (u.totalTokens ?? 0),
+            reasoningTokens:
+                (accUsage?.reasoningTokens ?? 0) + (u.reasoningTokens ?? 0),
+        };
+    };
     const effectiveMaxOutputTokens = clampMaxOutputTokens(maxOutputTokens);
     console.info("[chat] request", {
       model,
       vision: hasImages,
       xmlChars: typeof xml === "string" ? xml.length : 0,
-      compactXmlChars: compactXmlContext(xml).length,
+      compactXmlChars: compactXmlContext(xmlForContext).length,
       messages: messages.length,
-      maxOutputTokens: effectiveMaxOutputTokens,
+      historyKept: historyMessages.length,
+      maxOutputTokens: effectiveMaxOutputTokens ?? "model default",
+      contextLength: contextLength ?? "unset",
       thinkingLevel: thinkingLevel ?? "auto",
     });
 
@@ -134,7 +195,9 @@ ${buildDrawioSkillContext(lastMessageText)}`;
       system: composedSystem,
       model: client.chat(model),
       messages: enhancedMessages,
-      maxOutputTokens: effectiveMaxOutputTokens,
+      ...(effectiveMaxOutputTokens
+        ? { maxOutputTokens: effectiveMaxOutputTokens }
+        : {}),
       providerOptions,
       // No retries: a degenerate reasoning loop would just run twice.
       maxRetries: 0,
@@ -294,6 +357,19 @@ ${buildDrawioSkillContext(lastMessageText)}`;
 
     return result.toUIMessageStreamResponse({
       onError: errorHandler,
+      // Attach usage + elapsed time to the assistant message metadata so the
+      // UI can show them under the reply. (DefaultChatTransport drops the
+      // finish chunk's usage, so this is the channel that reaches the client.)
+      messageMetadata: ({ part }) => {
+        if (part.type === "finish-step") {
+          addUsage((part as { usage?: typeof accUsage }).usage);
+          return { usage: accUsage, elapsedMs: Date.now() - requestStartedAt };
+        }
+        if (part.type === "finish") {
+          return { usage: accUsage, elapsedMs: Date.now() - requestStartedAt };
+        }
+        return undefined;
+      },
     });
   } catch (error) {
     console.error('Error in chat route:', error);

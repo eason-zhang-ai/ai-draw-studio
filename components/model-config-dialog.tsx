@@ -38,6 +38,8 @@ interface ServerDefaults {
     maxOutputTokens: number | null;
     /** "" = endpoint default (no reasoning_effort is sent). */
     thinkingLevel: string;
+    /** Input token budget; null = no trimming (model default window). */
+    contextLength: number | null;
 }
 
 /**
@@ -259,11 +261,17 @@ export function ModelConfigDialog({
                 ? "读取中…"
                 : serverDefaults.maxOutputTokens
                   ? String(serverDefaults.maxOutputTokens)
-                  : "路由内置默认",
+                  : "不设（模型默认）",
         thinkingLevel:
             serverDefaults === null
                 ? "读取中…"
                 : serverDefaults.thinkingLevel || "未设置（用接口默认）",
+        contextLength:
+            serverDefaults === null
+                ? "读取中…"
+                : serverDefaults.contextLength
+                  ? String(serverDefaults.contextLength)
+                  : "不设（模型默认）",
     };
 
     return (
@@ -445,6 +453,28 @@ export function ModelConfigDialog({
                         </label>
 
                         <label className="text-sm space-y-1">
+                            <span className="block font-medium">上下文长度</span>
+                            <Input
+                                type="number"
+                                min={0}
+                                step={1000}
+                                value={draft.contextLength ?? ""}
+                                placeholder={ph.contextLength}
+                                onChange={(e) =>
+                                    handleFieldChange(
+                                        "contextLength",
+                                        e.target.value
+                                            ? Math.max(0, Number(e.target.value))
+                                            : undefined
+                                    )
+                                }
+                            />
+                            <span className="text-[11px] text-muted-foreground">
+                                留空 = 不裁剪输入，用模型默认窗口；设置后按预算裁剪历史/图表上下文
+                            </span>
+                        </label>
+
+                        <label className="text-sm space-y-1">
                             <span className="block font-medium">最大输出 Token</span>
                             <Input
                                 type="number"
@@ -462,7 +492,7 @@ export function ModelConfigDialog({
                                 }
                             />
                             <span className="text-[11px] text-muted-foreground">
-                                可根据模型限额调整，避免长 JSON 被截断
+                                留空 = 不传参数，用模型默认上限
                             </span>
                         </label>
 

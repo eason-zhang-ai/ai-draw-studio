@@ -161,8 +161,53 @@ const COMPACT_TYPE_HINTS: { keywords: string[]; hint: string }[] = [
     },
 ];
 
+/**
+ * Skill-context mode.
+ *
+ * "compact" (default) injects the ~1.5KB essentials below. It was adopted
+ * when the endpoint degenerated badly: streaming mode + a full 13KB
+ * xml-authoring guide + 7 tools produced only 1/5 usable tool calls, while
+ * the compact hint measured 6/6.
+ *
+ * That measurement predates three changes that all push the other way:
+ *   1. createBufferedFetch forces NON-streaming upstream (the largest factor);
+ *   2. AI_MAX_OUTPUT_TOKENS is no longer clamped to 8k, so a slow "thinking"
+ *      pass is not truncated mid-reasoning;
+ *   3. AI_THINKING_LEVEL can cap reasoning directly (none/low).
+ *
+ * Set AI_SKILL_CONTEXT=full to inject the complete vendored drawio-skill
+ * references instead, and A/B it against compact on your own prompts.
+ */
+const SKILL_CONTEXT_MODE = (process.env.AI_SKILL_CONTEXT || "compact")
+    .trim()
+    .toLowerCase();
+
+/** Full mode: the real vendored reference docs (xml-authoring + matching type sections). */
+function buildFullDrawioSkillContext(userText: string, budget: number): string {
+    const lower = userText.toLowerCase();
+    const xmlAuthoring = loadReference("xml-authoring.md") ?? "";
+    const diagramTypes = loadReference("diagram-types.md") ?? "";
+
+    const sections = DIAGRAM_TYPE_SECTIONS.filter((entry) =>
+        entry.keywords.some((k) => lower.includes(k))
+    ).flatMap((entry) => entry.sections);
+
+    const typeReference = sections.length
+        ? extractSections(diagramTypes, sections)
+        : "";
+
+    const joined = [xmlAuthoring, typeReference]
+        .filter((part) => part.trim().length > 0)
+        .join("\n\n");
+
+    return joined.length > budget ? joined.slice(0, budget) : joined;
+}
+
 export function buildDrawioSkillContext(userText: string, budget = 18000): string {
-    void budget;
+    if (SKILL_CONTEXT_MODE === "full") {
+        return buildFullDrawioSkillContext(userText, budget);
+    }
+
     const lower = userText.toLowerCase();
     const hints = COMPACT_TYPE_HINTS.filter((entry) =>
         entry.keywords.some((k) => lower.includes(k))

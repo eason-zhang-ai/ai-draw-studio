@@ -9,6 +9,7 @@ import { UIMessage } from "ai";
 import { convertToLegalXml, replaceNodes } from "@/lib/utils";
 
 import { useDiagram } from "@/contexts/diagram-context";
+import { MessageStats } from "@/components/message-stats";
 
 interface ChatMessageDisplayProps {
     messages: UIMessage[];
@@ -254,6 +255,10 @@ export function ChatMessageDisplay({
                                 }
                             })}
                         </div>
+                        {/* Per-turn stats under assistant replies */}
+                        {message.role === "assistant" && (
+                            <MessageStats message={message} />
+                        )}
                         {/* Show immediate tool preview for the last user message */}
                             {message.role === "user" && 
                              messages[messages.length - 1]?.id === message.id && 

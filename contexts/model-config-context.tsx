@@ -11,6 +11,8 @@ export interface ModelConfig {
     maxOutputTokens?: number;
     /** Reasoning effort: none | minimal | low | medium | high. Empty = endpoint default. */
     thinkingLevel?: string;
+    /** Input token budget for a request; empty = server env / model default. */
+    contextLength?: number;
 }
 
 export interface ModelProfile {
@@ -46,6 +48,7 @@ export const defaultModelConfig: ModelConfig = {
     visionEnabled: undefined,
     maxOutputTokens: undefined,
     thinkingLevel: "",
+    contextLength: undefined,
 };
 
 const defaultProfile: ModelProfile = {

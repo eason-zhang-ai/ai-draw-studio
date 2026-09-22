@@ -6,8 +6,14 @@ import {
     getProfessionalDiagramGuidelines,
 } from "@/lib/diagram-prompt-guidelines";
 import { buildExcalidrawSkillContext } from "@/lib/domain-skills";
+import {
+    estimateTokens,
+    budgetMessages,
+    messageTokens,
+    trimTextToTokens,
+    type BudgetableMessage,
+} from "@/lib/context-budget";
 
-const DEFAULT_MAX_OUTPUT_TOKENS = 12_000;
 const MIN_OUTPUT_TOKENS = 2_000;
 const MAX_CONTEXT_MESSAGES = 8;
 
@@ -15,6 +21,7 @@ export const maxDuration = 60;
 
 export async function POST(req: Request) {
     try {
+        const requestStartedAt = Date.now();
         const { messages, scene, modelConfig } = await req.json();
 
         const systemMessage = `
@@ -64,10 +71,50 @@ Refer to the Excalidraw format guide for detailed information about the scene st
             lastMessage.parts?.filter((part: any) => part.type === "file") ||
             [];
 
+        const modelMessages = convertToModelMessages(recentMessages);
+        const historyModelMessages = modelMessages.slice(0, -1);
+        const lastModelMessage = modelMessages[modelMessages.length - 1];
+
+        const { client, model, maxOutputTokens, contextLength, providerOptions } =
+            resolveModel(modelConfig);
+
+        const composedSystem = `${systemMessage}
+
+## excalidraw-skill schema reference
+${buildExcalidrawSkillContext(lastMessageText)}`;
+
+        // Context-length budget: system + user text + images first, then
+        // history (≤40% of the remainder), then the scene JSON.
+        let sceneForContext =
+            typeof scene === "string"
+                ? scene
+                : '{"elements": [], "appState": {}, "files": {}}';
+        let historyMessages = historyModelMessages;
+        if (contextLength) {
+            const systemTokens = estimateTokens(composedSystem);
+            const userTokens = estimateTokens(lastMessageText);
+            const imageTokens = fileParts.length * 1000;
+            let remaining = Math.max(
+                0,
+                contextLength - systemTokens - userTokens - imageTokens
+            );
+            const historyBudget = Math.floor(remaining * 0.4);
+            historyMessages = budgetMessages(historyMessages, historyBudget);
+            const historyUsed = historyMessages.reduce(
+                (sum, m) => sum + messageTokens(m as BudgetableMessage),
+                0
+            );
+            const sceneTokens = Math.max(0, remaining - historyUsed);
+            sceneForContext = trimTextToTokens(
+                sceneForContext,
+                Math.max(200, sceneTokens)
+            );
+        }
+
         const formattedTextContent = `
 Current scene JSON:
 """json
-${scene || '{"elements": [], "appState": {}, "files": {}}'}
+${sceneForContext}
 """
 User input:
 """md
@@ -77,53 +124,62 @@ ${lastMessageText}
 ${getProfessionalDiagramGuidelines(lastMessageText)}
 `;
 
-        const modelMessages = convertToModelMessages(recentMessages);
-        let enhancedMessages = [...modelMessages];
+        let enhancedMessages = [...historyMessages];
+        if (lastModelMessage?.role === "user") {
+            const contentParts: any[] = [
+                { type: "text", text: formattedTextContent },
+            ];
 
-        if (enhancedMessages.length > 0) {
-            const lastModelMessage = enhancedMessages[enhancedMessages.length - 1];
-            if (lastModelMessage.role === "user") {
-                const contentParts: any[] = [
-                    { type: "text", text: formattedTextContent },
-                ];
-
-                for (const filePart of fileParts) {
-                    contentParts.push({
-                        type: "image",
-                        image: filePart.url,
-                        mimeType: filePart.mediaType,
-                    });
-                }
-
-                enhancedMessages = [
-                    ...enhancedMessages.slice(0, -1),
-                    { ...lastModelMessage, content: contentParts },
-                ];
+            for (const filePart of fileParts) {
+                contentParts.push({
+                    type: "image",
+                    image: filePart.url,
+                    mimeType: filePart.mediaType,
+                });
             }
+
+            enhancedMessages = [
+                ...historyMessages,
+                { ...lastModelMessage, content: contentParts },
+            ];
+        } else {
+            enhancedMessages = [...historyMessages, lastModelMessage];
         }
 
-        const { client, model, maxOutputTokens, providerOptions } =
-            resolveModel(modelConfig);
-        // No upper clamp — the operator sets the ceiling via
-        // AI_MAX_OUTPUT_TOKENS (docker/1Panel env).
-        const outputTokenBudget = Math.max(
-            MIN_OUTPUT_TOKENS,
+        // Unset → don't send max_tokens (model default applies).
+        const outputTokenBudget =
             maxOutputTokens && Number.isFinite(maxOutputTokens)
-                ? Math.floor(maxOutputTokens)
-                : DEFAULT_MAX_OUTPUT_TOKENS
-        );
+                ? Math.max(MIN_OUTPUT_TOKENS, Math.floor(maxOutputTokens))
+                : undefined;
 
-        const composedSystem = `${systemMessage}
-
-## excalidraw-skill schema reference
-${buildExcalidrawSkillContext(lastMessageText)}`;
-
+        // The fullStream's `finish` part carries no usage, but each
+        // `finish-step` part does. Accumulate them and forward via
+        // messageMetadata — the only channel DefaultChatTransport passes
+        // through to the client.
+        let accUsage: {
+            inputTokens?: number;
+            outputTokens?: number;
+            totalTokens?: number;
+            reasoningTokens?: number;
+        } | null = null;
+        const addUsage = (u?: typeof accUsage) => {
+            if (!u) return;
+            accUsage = {
+                inputTokens: (accUsage?.inputTokens ?? 0) + (u.inputTokens ?? 0),
+                outputTokens: (accUsage?.outputTokens ?? 0) + (u.outputTokens ?? 0),
+                totalTokens: (accUsage?.totalTokens ?? 0) + (u.totalTokens ?? 0),
+                reasoningTokens:
+                    (accUsage?.reasoningTokens ?? 0) + (u.reasoningTokens ?? 0),
+            };
+        };
         const result = streamText({
             system: composedSystem,
             model: client.chat(model),
             messages: enhancedMessages,
             temperature: 0,
-            maxOutputTokens: outputTokenBudget,
+            ...(outputTokenBudget
+                ? { maxOutputTokens: outputTokenBudget }
+                : {}),
             providerOptions,
             tools: {
                 display_excalidraw: {
@@ -173,6 +229,17 @@ ${buildExcalidrawSkillContext(lastMessageText)}`;
 
         return result.toUIMessageStreamResponse({
             onError: errorHandler,
+            // usage + elapsed time → message metadata, shown under the reply
+            messageMetadata: ({ part }) => {
+                if (part.type === "finish-step") {
+                    addUsage((part as { usage?: typeof accUsage }).usage);
+                    return { usage: accUsage, elapsedMs: Date.now() - requestStartedAt };
+                }
+                if (part.type === "finish") {
+                    return { usage: accUsage, elapsedMs: Date.now() - requestStartedAt };
+                }
+                return undefined;
+            },
         });
     } catch (error) {
         console.error("Error in excalidraw route:", error);

@@ -24,5 +24,7 @@ export async function GET() {
         thinkingLevel: defaults.thinkingLevel ?? "",
         // env AI_MODEL_SUPPORTS_VISION — client default for the "supports image input" toggle
         visionEnabled: defaults.visionEnabled,
+        // env AI_CONTEXT_LENGTH — input token budget; null = no trimming
+        contextLength: defaults.contextLength ?? null,
     });
 }

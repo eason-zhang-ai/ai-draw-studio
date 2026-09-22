@@ -114,7 +114,8 @@ Every variable supports both the `AI_*` (preferred) and `OPENAI_*` (fallback) pr
 | `AI_BASE_URL` | yes | OpenAI-compatible endpoint, e.g. `https://code-api.erix.vip/v1`, `https://api.deepseek.com/v1` |
 | `AI_API_KEY` | yes | Endpoint key |
 | `AI_MODEL` | yes | Default model. Diagram generation and image input **share the same model** |
-| `AI_MAX_OUTPUT_TOKENS` | no | Max output tokens. There is **no code-level cap**; the real ceiling is whatever the model/endpoint allows |
+| `AI_MAX_OUTPUT_TOKENS` | no | Max output tokens. **Empty = don't send the parameter, use the model's default ceiling** (measured [1, 393216] on this endpoint) |
+| `AI_CONTEXT_LENGTH` | no | Input token budget (rough estimate). Empty = no trimming, model default window (measured ≥250K); when set, history / diagram context is trimmed to fit |
 | `AI_THINKING_LEVEL` | no | Reasoning effort `none` / `minimal` / `low` / `medium` / `high`; empty = keep the endpoint default |
 | `AI_MODEL_SUPPORTS_VISION` | no | `true` / `false`: whether the default model accepts image input; server default for the client's "model supports image input" toggle |
 
@@ -124,6 +125,7 @@ AI_BASE_URL="https://code-api.erix.vip/v1"
 AI_API_KEY="sk-your-key"
 AI_MODEL="deepseek-v4-flash"
 AI_MAX_OUTPUT_TOKENS="384000"
+# AI_CONTEXT_LENGTH="64000"
 AI_THINKING_LEVEL="low"
 AI_MODEL_SUPPORTS_VISION="true"
 ```
@@ -194,6 +196,7 @@ services:
       AI_MAX_OUTPUT_TOKENS: ${AI_MAX_OUTPUT_TOKENS}
       AI_THINKING_LEVEL: ${AI_THINKING_LEVEL}
       AI_MODEL_SUPPORTS_VISION: ${AI_MODEL_SUPPORTS_VISION}
+      AI_CONTEXT_LENGTH: ${AI_CONTEXT_LENGTH}
 ```
 
 Values can come from either of these:

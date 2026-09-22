@@ -113,7 +113,8 @@ cp env.example .env.local
 | `AI_BASE_URL` | 是 | OpenAI 兼容端点，如 `https://code-api.erix.vip/v1`、`https://api.deepseek.com/v1` |
 | `AI_API_KEY` | 是 | 端点密钥 |
 | `AI_MODEL` | 是 | 默认模型。绘图与图片输入**共用同一个模型** |
-| `AI_MAX_OUTPUT_TOKENS` | 否 | 最大输出 token。代码内**无上限**，实际上限取决于模型/端点自身 |
+| `AI_MAX_OUTPUT_TOKENS` | 否 | 最大输出 token。**留空 = 不传参数，用模型默认上限**（该端点实测上限 393216） |
+| `AI_CONTEXT_LENGTH` | 否 | 输入上下文预算（token，粗略估算）。留空 = 不裁剪，用模型默认窗口（实测 ≥250K）；设置后按预算裁剪历史消息/图表上下文 |
 | `AI_THINKING_LEVEL` | 否 | 思考等级 `none` / `minimal` / `low` / `medium` / `high`；留空 = 沿用端点默认 |
 | `AI_MODEL_SUPPORTS_VISION` | 否 | `true` / `false`：默认模型是否支持图片输入；是前端「模型支持图片输入」开关的服务端默认值 |
 
@@ -123,6 +124,7 @@ AI_BASE_URL="https://code-api.erix.vip/v1"
 AI_API_KEY="sk-your-key"
 AI_MODEL="deepseek-v4-flash"
 AI_MAX_OUTPUT_TOKENS="384000"
+# AI_CONTEXT_LENGTH="64000"
 AI_THINKING_LEVEL="low"
 AI_MODEL_SUPPORTS_VISION="true"
 ```
@@ -193,6 +195,7 @@ services:
       AI_MAX_OUTPUT_TOKENS: ${AI_MAX_OUTPUT_TOKENS}
       AI_THINKING_LEVEL: ${AI_THINKING_LEVEL}
       AI_MODEL_SUPPORTS_VISION: ${AI_MODEL_SUPPORTS_VISION}
+      AI_CONTEXT_LENGTH: ${AI_CONTEXT_LENGTH}
 ```
 
 值的来源有两种：

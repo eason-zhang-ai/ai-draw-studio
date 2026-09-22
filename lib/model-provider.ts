@@ -38,6 +38,11 @@ export interface ModelConfigInput {
     maxOutputTokens?: number;
     /** Reasoning effort; empty = endpoint default. */
     thinkingLevel?: string;
+    /**
+     * Input token budget (rough estimate) for a request. Front-end form wins,
+     * then env AI_CONTEXT_LENGTH; unset = no trimming (model default window).
+     */
+    contextLength?: number;
 }
 
 function parseEnvInt(value?: string) {
@@ -66,6 +71,7 @@ const ENV = {
     // default only (the front-end "model supports image input" toggle falls
     // back to it); the server sends image parts to the single model as-is.
     modelSupportsVision: parseBool(process.env.AI_MODEL_SUPPORTS_VISION),
+    contextLength: parseEnvInt(process.env.AI_CONTEXT_LENGTH),
 };
 
 /**
@@ -98,6 +104,12 @@ export function resolveModel(config?: ModelConfigInput) {
             : ENV.maxOutputTokens;
     const thinkingLevel =
         parseThinkingLevel(config?.thinkingLevel) ?? ENV.thinkingLevel;
+    const contextLength =
+        typeof config?.contextLength === "number" &&
+        Number.isFinite(config.contextLength) &&
+        config.contextLength > 0
+            ? Math.floor(config.contextLength)
+            : ENV.contextLength;
 
     if (!model) {
         throw new Error(
@@ -118,7 +130,14 @@ export function resolveModel(config?: ModelConfigInput) {
         ? { openai: { reasoningEffort: thinkingLevel } }
         : undefined;
 
-    return { client, model, maxOutputTokens, thinkingLevel, providerOptions };
+    return {
+        client,
+        model,
+        maxOutputTokens,
+        thinkingLevel,
+        contextLength,
+        providerOptions,
+    };
 }
 
 /** Server defaults, exposed for the UI to display effective settings. */
@@ -130,5 +149,6 @@ export function getServerDefaults() {
         maxOutputTokens: ENV.maxOutputTokens,
         thinkingLevel: ENV.thinkingLevel,
         visionEnabled: Boolean(ENV.modelSupportsVision),
+        contextLength: ENV.contextLength,
     };
 }

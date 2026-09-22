@@ -6,6 +6,7 @@ import Image from "next/image";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import ExamplePanel from "./chat-example-panel";
 import { UIMessage } from "ai";
+import { MessageStats } from "@/components/message-stats";
 import { useMermaid } from "@/contexts/mermaid-context";
 
 interface MermaidChatMessageDisplayProps {
@@ -205,6 +206,9 @@ export function MermaidChatMessageDisplay({
                                 }
                             })}
                         </div>
+                        {message.role === "assistant" && (
+                            <MessageStats message={message} />
+                        )}
                         {/* Show immediate tool preview for the last user message */}
                         {message.role === "user" &&
                             messages[messages.length - 1]?.id === message.id &&

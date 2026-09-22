@@ -2,6 +2,10 @@ import { streamText, convertToModelMessages } from "ai";
 import { z } from "zod/v3";
 import { resolveModel } from "@/lib/model-provider";
 import {
+    estimateTokens,
+    budgetMessages,
+} from "@/lib/context-budget";
+import {
     DIAGRAM_QUALITY_GUIDELINES,
     getProfessionalDiagramGuidelines,
 } from "@/lib/diagram-prompt-guidelines";
@@ -12,6 +16,7 @@ const MAX_CONTEXT_MESSAGES = 8;
 
 export async function POST(req: Request) {
     try {
+        const requestStartedAt = Date.now();
         const { messages, definition, modelConfig } = await req.json();
 
         const systemMessage = `
@@ -91,18 +96,49 @@ ${getProfessionalDiagramGuidelines(lastMessageText)}
             }
         }
 
-        const { client, model, providerOptions } = resolveModel(modelConfig);
+        const { client, model, maxOutputTokens, contextLength, providerOptions } = resolveModel(modelConfig);
 
         const composedSystem = `${systemMessage}
 
 ## plantuml-skill reference
 ${buildPlantumlSkillContext(lastMessageText)}`;
 
+        // Context-length budget (front-end > env AI_CONTEXT_LENGTH > no trim)
+        let finalMessages = enhancedMessages;
+        if (contextLength) {
+            const systemTokens = estimateTokens(composedSystem);
+            finalMessages = budgetMessages(
+                enhancedMessages,
+                Math.max(0, contextLength - systemTokens)
+            );
+        }
+
+        // The fullStream's `finish` part carries no usage, but each
+        // `finish-step` part does. Accumulate them and forward via
+        // messageMetadata — the only channel DefaultChatTransport passes
+        // through to the client.
+        let accUsage: {
+            inputTokens?: number;
+            outputTokens?: number;
+            totalTokens?: number;
+            reasoningTokens?: number;
+        } | null = null;
+        const addUsage = (u?: typeof accUsage) => {
+            if (!u) return;
+            accUsage = {
+                inputTokens: (accUsage?.inputTokens ?? 0) + (u.inputTokens ?? 0),
+                outputTokens: (accUsage?.outputTokens ?? 0) + (u.outputTokens ?? 0),
+                totalTokens: (accUsage?.totalTokens ?? 0) + (u.totalTokens ?? 0),
+                reasoningTokens:
+                    (accUsage?.reasoningTokens ?? 0) + (u.reasoningTokens ?? 0),
+            };
+        };
         const result = streamText({
             system: composedSystem,
             model: client.chat(model),
-            messages: enhancedMessages,
+            messages: finalMessages,
             temperature: 0.2,
+            ...(maxOutputTokens ? { maxOutputTokens } : {}),
             providerOptions,
             tools: {
                 display_plantuml: {
@@ -136,6 +172,17 @@ ${buildPlantumlSkillContext(lastMessageText)}`;
 
         return result.toUIMessageStreamResponse({
             onError: errorHandler,
+            // usage + elapsed time → message metadata, shown under the reply
+            messageMetadata: ({ part }) => {
+                if (part.type === "finish-step") {
+                    addUsage((part as { usage?: typeof accUsage }).usage);
+                    return { usage: accUsage, elapsedMs: Date.now() - requestStartedAt };
+                }
+                if (part.type === "finish") {
+                    return { usage: accUsage, elapsedMs: Date.now() - requestStartedAt };
+                }
+                return undefined;
+            },
         });
     } catch (error) {
         console.error("Error in plantuml route:", error);
