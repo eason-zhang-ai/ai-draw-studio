@@ -137,8 +137,15 @@ export default function Home() {
     };
 
     // Handle the load event from draw.io
+    // The iframe is recreated every time this page mounts, so on the first
+    // load after a mode switch we push the diagram we remembered back into it.
+    const restoredRef = useRef(false);
     const handleDrawioLoad = (data: any) => {
         setIsDrawIoLoaded(true);
+        if (!restoredRef.current && chartXML) {
+            restoredRef.current = true;
+            loadDiagram(chartXML);
+        }
     };
 
     // Handle the export event from draw.io

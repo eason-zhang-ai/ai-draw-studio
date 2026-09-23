@@ -134,6 +134,15 @@ export function DiagramProvider({ children }: { children: React.ReactNode }) {
                 xml: chart,
             });
         }
+        // The rendered diagram lives inside the draw.io iframe, which is
+        // destroyed when this page unmounts (e.g. switching diagram mode).
+        // Everything we push into the canvas is therefore also recorded here,
+        // so the iframe can be restored when the page mounts again. Without
+        // this, chartXML only tracked EXPORTS — so a freshly generated diagram
+        // was never remembered and came back blank.
+        if (chart) {
+            setChartXML(chart);
+        }
     };
 
     const handleDiagramExport = (data: any) => {
@@ -209,12 +218,8 @@ export function DiagramProvider({ children }: { children: React.ReactNode }) {
         const reader = new FileReader();
         reader.onload = (e) => {
             const content = e.target?.result as string;
-            if (drawioRef.current) {
-                // Try to load as XML directly
-                drawioRef.current.load({
-                    xml: content,
-                });
-            }
+            // Go through loadDiagram so the imported XML is remembered too.
+            loadDiagram(content);
         };
         reader.readAsText(file);
     };
