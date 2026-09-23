@@ -8,6 +8,9 @@ import React, {
     useState,
 } from "react";
 
+import { PANEL_KEYS } from "@/lib/panel-storage";
+import { usePersistedPanel } from "@/lib/use-persisted-panel";
+
 const DEFAULT_DEFINITION = `graph TB
     %% ===== 房顶部分：用户接入层 =====
     Web[🌐 Web界面]:::roof
@@ -139,6 +142,15 @@ function createHistoryEntry(
 
 export function MermaidProvider({ children }: { children: React.ReactNode }) {
     const [definition, setDefinitionState] = useState(DEFAULT_DEFINITION);
+
+    // 刷新后恢复上次的内容（IndexedDB）。
+    usePersistedPanel<string>({
+        storageKey: PANEL_KEYS.mermaid,
+        value: definition,
+        onRestore: (saved) => {
+            if (saved) setDefinitionState(saved);
+        },
+    });
     const [history, setHistory] = useState<MermaidHistoryEntry[]>(() => [
         createHistoryEntry(DEFAULT_DEFINITION, "Initial sample diagram"),
     ]);

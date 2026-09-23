@@ -19,7 +19,7 @@ export function ExcalidrawWorkspace({
 }: {
     onRequestHistory: () => void;
 }) {
-    const { sceneData, recordScene, clearScene, excalidrawAPIRef, history } =
+    const { sceneData, hydrated, recordScene, clearScene, excalidrawAPIRef, history } =
         useExcalidraw();
     const [isCollapsed, setIsCollapsed] = useState(false);
 
@@ -47,13 +47,22 @@ export function ExcalidrawWorkspace({
     return (
         <div className="flex flex-col h-full gap-1">
             <div className="flex-1 min-h-0 border rounded-lg overflow-hidden bg-white">
-                <Excalidraw
-                    excalidrawAPI={(api) => {
-                        excalidrawAPIRef.current = api;
-                    }}
-                    initialData={initialData}
-                    onChange={handleOnChange}
-                />
+                {/* Excalidraw reads initialData only at mount, so wait for the
+                    IndexedDB restore to settle — otherwise a reload would come
+                    up with the default scene. */}
+                {hydrated ? (
+                    <Excalidraw
+                        excalidrawAPI={(api) => {
+                            excalidrawAPIRef.current = api;
+                        }}
+                        initialData={initialData}
+                        onChange={handleOnChange}
+                    />
+                ) : (
+                    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                        正在恢复画布…
+                    </div>
+                )}
             </div>
             <ResizablePanel 
                 defaultHeight={208}

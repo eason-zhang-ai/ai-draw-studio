@@ -8,6 +8,9 @@ import React, {
     useState,
 } from "react";
 
+import { PANEL_KEYS } from "@/lib/panel-storage";
+import { usePersistedPanel } from "@/lib/use-persisted-panel";
+
 const DEFAULT_SNIPPET = `@startjson
 <style>
   .h1 {
@@ -93,6 +96,15 @@ function createEntry(
 
 export function PlantUMLProvider({ children }: { children: React.ReactNode }) {
     const [definition, setDefinitionState] = useState(DEFAULT_SNIPPET);
+
+    // 刷新后恢复上次的内容（IndexedDB）。
+    usePersistedPanel<string>({
+        storageKey: PANEL_KEYS.plantuml,
+        value: definition,
+        onRestore: (saved) => {
+            if (saved) setDefinitionState(saved);
+        },
+    });
     const [history, setHistory] = useState<PlantUMLHistoryEntry[]>(() => [
         createEntry(DEFAULT_SNIPPET, "Initial snippet"),
     ]);

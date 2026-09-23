@@ -8,6 +8,9 @@ import React, {
     useState,
 } from "react";
 
+import { PANEL_KEYS } from "@/lib/panel-storage";
+import { usePersistedPanel } from "@/lib/use-persisted-panel";
+
 // Supported diagram types and their endpoints
 // Reference: https://kroki.io/#support
 const DIAGRAM_TYPES: Record<string, string> = {
@@ -1930,6 +1933,15 @@ function createHistoryEntry(
 
 export function KrokiProvider({ children }: { children: React.ReactNode }) {
     const [definition, setDefinitionState] = useState(DEFAULT_DEFINITIONS.plantuml);
+
+    // 刷新后恢复上次的内容（IndexedDB）。
+    usePersistedPanel<string>({
+        storageKey: PANEL_KEYS.kroki,
+        value: definition,
+        onRestore: (saved) => {
+            if (saved) setDefinitionState(saved);
+        },
+    });
     const [history, setHistory] = useState<KrokiHistoryEntry[]>(() => [
         createHistoryEntry(DEFAULT_DEFINITIONS.plantuml, "Initial diagram"),
     ]);

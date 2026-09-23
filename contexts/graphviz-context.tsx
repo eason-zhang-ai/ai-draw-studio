@@ -8,6 +8,9 @@ import React, {
     useState,
 } from "react";
 
+import { PANEL_KEYS } from "@/lib/panel-storage";
+import { usePersistedPanel } from "@/lib/use-persisted-panel";
+
 // Default Graphviz definition
 const DEFAULT_DEFINITION = `digraph code_structure {
     rankdir=TB;
@@ -70,6 +73,15 @@ function appendHistory(
 
 export function GraphvizProvider({ children }: { children: React.ReactNode }) {
     const [definition, setDefinition] = useState<string>(DEFAULT_DEFINITION);
+
+    // 刷新后恢复上次的内容（IndexedDB）。
+    usePersistedPanel<string>({
+        storageKey: PANEL_KEYS.graphviz,
+        value: definition,
+        onRestore: (saved) => {
+            if (saved) setDefinition(saved);
+        },
+    });
     const [history, setHistory] = useState<GraphvizHistoryEntry[]>(() => [
         createHistoryEntry(DEFAULT_DEFINITION, "Initial sample diagram"),
     ]);

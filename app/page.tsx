@@ -137,16 +137,24 @@ export default function Home() {
     };
 
     // Handle the load event from draw.io
-    // The iframe is recreated every time this page mounts, so on the first
-    // load after a mode switch we push the diagram we remembered back into it.
     const restoredRef = useRef(false);
     const handleDrawioLoad = (data: any) => {
         setIsDrawIoLoaded(true);
-        if (!restoredRef.current && chartXML) {
-            restoredRef.current = true;
-            loadDiagram(chartXML);
-        }
     };
+
+    // Restore the remembered diagram once the iframe is ready AND chartXML has
+    // arrived — after a reload those two finish in either order (the iframe
+    // takes seconds, the IndexedDB read milliseconds).
+    //
+    // Doing this inside onLoad does NOT work: react-drawio registers its
+    // message handler in a mount-only effect, so the callback forever holds the
+    // FIRST render's closure — where chartXML is still empty on a fresh page
+    // load. Reading it from an effect that depends on chartXML avoids that.
+    useEffect(() => {
+        if (!isDrawIoLoaded || restoredRef.current || !chartXML) return;
+        restoredRef.current = true;
+        loadDiagram(chartXML);
+    }, [isDrawIoLoaded, chartXML, loadDiagram]);
 
     // Handle the export event from draw.io
     const handleDrawioExport = (data: any) => {

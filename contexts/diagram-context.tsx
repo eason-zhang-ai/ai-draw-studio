@@ -3,6 +3,8 @@
 import React, { createContext, useContext, useRef, useState } from "react";
 import type { DrawIoEmbedRef } from "react-drawio";
 import { extractDiagramXML } from "../lib/utils";
+import { PANEL_KEYS } from "@/lib/panel-storage";
+import { usePersistedPanel } from "@/lib/use-persisted-panel";
 
 interface DiagramContextType {
     chartXML: string;
@@ -51,6 +53,17 @@ export function DiagramProvider({ children }: { children: React.ReactNode }) {
     >([]);
     const [exportPurpose, setExportPurpose] = useState<'chat' | 'file'>('chat');
     const drawioRef = useRef<DrawIoEmbedRef | null>(null);
+
+    // Persist the canvas so a reload does not lose the diagram. The rendered
+    // content lives in the draw.io iframe (rebuilt on mount), so app/page.tsx
+    // feeds this value back into the iframe on its first load.
+    usePersistedPanel<string>({
+        storageKey: PANEL_KEYS.drawio,
+        value: chartXML,
+        onRestore: (saved) => {
+            if (saved) setChartXML(saved);
+        },
+    });
     const resolverRef = useRef<((value: string) => void) | null>(null);
     const pngResolverRef = useRef<((value: string) => void) | null>(null);
     const pngExportPending = useRef(false);

@@ -9,6 +9,8 @@ import React, {
     useState,
 } from "react";
 import type {AppState, ExcalidrawImperativeAPI} from "@excalidraw/excalidraw/types";
+import { PANEL_KEYS } from "@/lib/panel-storage";
+import { usePersistedPanel } from "@/lib/use-persisted-panel";
 
 const DEFAULT_SCENE = JSON.stringify(
     {
@@ -948,6 +950,8 @@ interface SceneSnapshot {
 
 interface ExcalidrawContextValue {
     sceneData: string;
+    /** True once the IndexedDB restore attempt has settled. */
+    hydrated: boolean;
     sceneDraft: string | null;
     setSceneDraft: (json: string | null) => void;
     history: SceneSnapshot[];
@@ -1190,6 +1194,17 @@ export function ExcalidrawProvider({
     ]);
     const excalidrawAPIRef = useRef<ExcalidrawImperativeAPI | null>(null);
 
+    // Persist the scene so a reload does not lose the canvas. Excalidraw only
+    // reads `initialData` at mount, so the workspace waits for `hydrated`
+    // before rendering it and thereby picks up the restored scene directly.
+    const { hydrated } = usePersistedPanel<string>({
+        storageKey: PANEL_KEYS.excalidraw,
+        value: sceneData,
+        onRestore: (saved) => {
+            if (saved) setSceneData(saved);
+        },
+    });
+
     const recordScene = useCallback(
         (
             elements: any[],
@@ -1260,6 +1275,7 @@ export function ExcalidrawProvider({
     const value = useMemo(
         () => ({
             sceneData,
+            hydrated,
             sceneDraft,
             setSceneDraft,
             history,
@@ -1268,7 +1284,7 @@ export function ExcalidrawProvider({
             applyScene,
             clearScene,
         }),
-        [sceneData, sceneDraft, history, recordScene, applyScene, clearScene]
+        [sceneData, hydrated, sceneDraft, history, recordScene, applyScene, clearScene]
     );
 
     return (
