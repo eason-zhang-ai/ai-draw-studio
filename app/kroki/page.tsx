@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { KrokiProvider } from "@/contexts/kroki-context";
 import { KrokiWorkspace } from "@/components/kroki-workspace";
 import { CollapsibleChatPanel } from "@/components/collapsible-chat-panel";
 
@@ -32,15 +31,13 @@ export default function KrokiPage() {
     }
 
     return (
-        <KrokiProvider>
-            <div className="flex h-screen bg-gray-100 overflow-hidden">
-                <div className={`h-full p-1 transition-all duration-300 ${isChatCollapsed ? 'w-full' : 'w-3/4'}`}>
-                    <KrokiWorkspace />
-                </div>
-                <div className={`h-full p-1 transition-all duration-300 ${isChatCollapsed ? 'w-0' : 'w-1/4'}`}>
-                    <CollapsibleChatPanel type="kroki" onCollapseChange={setIsChatCollapsed} />
-                </div>
+        <div className="flex h-screen bg-gray-100 overflow-hidden">
+            <div className={`h-full p-1 transition-all duration-300 ${isChatCollapsed ? 'w-full' : 'w-3/4'}`}>
+                <KrokiWorkspace />
             </div>
-        </KrokiProvider>
+            <div className={`h-full p-1 transition-all duration-300 ${isChatCollapsed ? 'w-0' : 'w-1/4'}`}>
+                <CollapsibleChatPanel type="kroki" onCollapseChange={setIsChatCollapsed} />
+            </div>
+        </div>
     );
 }

@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { ExcalidrawProvider } from "@/contexts/excalidraw-context";
 import { ExcalidrawWorkspace } from "@/components/excalidraw-workspace";
 import { CollapsibleChatPanel } from "@/components/collapsible-chat-panel";
 import { ExcalidrawHistoryDialog } from "@/components/excalidraw-history-dialog";
@@ -34,21 +33,19 @@ export default function ExcalidrawPage() {
     }
 
     return (
-        <ExcalidrawProvider>
-            <div className="flex h-screen bg-gray-100 overflow-hidden">
-                <div className={`h-full p-1 transition-all duration-300 ${isChatCollapsed ? 'w-full' : 'w-3/4'}`}>
-                    <ExcalidrawWorkspace
-                        onRequestHistory={() => setShowHistory(true)}
-                    />
-                </div>
-                <div className={`h-full p-1 transition-all duration-300 ${isChatCollapsed ? 'w-0' : 'w-1/4'}`}>
-                    <CollapsibleChatPanel type="excalidraw" onCollapseChange={setIsChatCollapsed} />
-                </div>
-                <ExcalidrawHistoryDialog
-                    open={showHistory}
-                    onOpenChange={setShowHistory}
+        <div className="flex h-screen bg-gray-100 overflow-hidden">
+            <div className={`h-full p-1 transition-all duration-300 ${isChatCollapsed ? 'w-full' : 'w-3/4'}`}>
+                <ExcalidrawWorkspace
+                    onRequestHistory={() => setShowHistory(true)}
                 />
             </div>
-        </ExcalidrawProvider>
+            <div className={`h-full p-1 transition-all duration-300 ${isChatCollapsed ? 'w-0' : 'w-1/4'}`}>
+                <CollapsibleChatPanel type="excalidraw" onCollapseChange={setIsChatCollapsed} />
+            </div>
+            <ExcalidrawHistoryDialog
+                open={showHistory}
+                onOpenChange={setShowHistory}
+            />
+        </div>
     );
 }

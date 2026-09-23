@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { GraphvizProvider } from "@/contexts/graphviz-context";
 import { GraphvizWorkspace } from "@/components/graphviz-workspace";
 import { CollapsibleChatPanel } from "@/components/collapsible-chat-panel";
 
@@ -32,15 +31,13 @@ export default function GraphvizPage() {
     }
 
     return (
-        <GraphvizProvider>
-            <div className="flex h-screen bg-gray-100 overflow-hidden">
-                <div className={`h-full p-1 transition-all duration-300 ${isChatCollapsed ? 'w-full' : 'w-3/4'}`}>
-                    <GraphvizWorkspace />
-                </div>
-                <div className={`h-full p-1 transition-all duration-300 ${isChatCollapsed ? 'w-0' : 'w-1/4'}`}>
-                    <CollapsibleChatPanel type="graphviz" onCollapseChange={setIsChatCollapsed} />
-                </div>
+        <div className="flex h-screen bg-gray-100 overflow-hidden">
+            <div className={`h-full p-1 transition-all duration-300 ${isChatCollapsed ? 'w-full' : 'w-3/4'}`}>
+                <GraphvizWorkspace />
             </div>
-        </GraphvizProvider>
+            <div className={`h-full p-1 transition-all duration-300 ${isChatCollapsed ? 'w-0' : 'w-1/4'}`}>
+                <CollapsibleChatPanel type="graphviz" onCollapseChange={setIsChatCollapsed} />
+            </div>
+        </div>
     );
 }

@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { PlantUMLProvider } from "@/contexts/plantuml-context";
 import { PlantUMLWorkspace } from "@/components/plantuml-workspace";
 import { CollapsibleChatPanel } from "@/components/collapsible-chat-panel";
 
@@ -32,15 +31,13 @@ export default function PlantUMLPage() {
     }
 
     return (
-        <PlantUMLProvider>
-            <div className="flex h-screen bg-gray-100 overflow-hidden">
-                <div className={`h-full p-1 transition-all duration-300 ${isChatCollapsed ? 'w-full' : 'w-3/4'}`}>
-                    <PlantUMLWorkspace />
-                </div>
-                <div className={`h-full p-1 transition-all duration-300 ${isChatCollapsed ? 'w-0' : 'w-1/4'}`}>
-                    <CollapsibleChatPanel type="plantuml" onCollapseChange={setIsChatCollapsed} />
-                </div>
+        <div className="flex h-screen bg-gray-100 overflow-hidden">
+            <div className={`h-full p-1 transition-all duration-300 ${isChatCollapsed ? 'w-full' : 'w-3/4'}`}>
+                <PlantUMLWorkspace />
             </div>
-        </PlantUMLProvider>
+            <div className={`h-full p-1 transition-all duration-300 ${isChatCollapsed ? 'w-0' : 'w-1/4'}`}>
+                <CollapsibleChatPanel type="plantuml" onCollapseChange={setIsChatCollapsed} />
+            </div>
+        </div>
     );
 }
