@@ -72,8 +72,6 @@ const ENV = {
     // back to it); the server sends image parts to the single model as-is.
     modelSupportsVision: parseBool(process.env.AI_MODEL_SUPPORTS_VISION),
     contextLength: parseEnvInt(process.env.AI_CONTEXT_LENGTH),
-    // Client-side canvas animation; defaults to ON unless explicitly disabled.
-    progressiveDraw: parseBool(process.env.AI_PROGRESSIVE_DRAW) ?? true,
 };
 
 /**
@@ -152,6 +150,5 @@ export function getServerDefaults() {
         thinkingLevel: ENV.thinkingLevel,
         visionEnabled: Boolean(ENV.modelSupportsVision),
         contextLength: ENV.contextLength,
-        progressiveDraw: ENV.progressiveDraw,
     };
 }

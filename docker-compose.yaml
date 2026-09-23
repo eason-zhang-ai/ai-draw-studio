@@ -16,5 +16,4 @@ services:
       AI_MODEL_SUPPORTS_VISION: ${AI_MODEL_SUPPORTS_VISION}  # true/false
       AI_CONTEXT_LENGTH: ${AI_CONTEXT_LENGTH}  # input token budget, unset = model default
       AI_SKILL_CONTEXT: ${AI_SKILL_CONTEXT}  # compact (default) | full
-      AI_PROGRESSIVE_DRAW: ${AI_PROGRESSIVE_DRAW}  # true (default) | false
     restart: unless-stopped

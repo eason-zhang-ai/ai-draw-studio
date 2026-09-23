@@ -4,7 +4,6 @@ import React, {
     createContext,
     useCallback,
     useContext,
-    useEffect,
     useMemo,
     useRef,
     useState,
@@ -970,50 +969,6 @@ const ExcalidrawContext = createContext<ExcalidrawContextValue | undefined>(
     undefined
 );
 
-/**
- * Progressive reveal ("从无到有") tuning.
- *
- * The model still returns the COMPLETE scene in one tool call — the reveal is
- * purely a front-end replay, so it costs zero extra tokens. We chunk the
- * elements and feed them to updateScene over time, so the diagram reads as
- * being drawn rather than appearing all at once.
- */
-const REVEAL_TICK_MS = 110;
-const REVEAL_MAX_MS = 2600;
-const REVEAL_MIN_BATCH = 1;
-const REVEAL_MAX_BATCH = 4;
-/** Below this element count an animation is just noise. */
-const REVEAL_MIN_ELEMENTS = 4;
-
-/** Batch size that keeps the whole reveal within REVEAL_MAX_MS. */
-function computeRevealBatchSize(total: number): number {
-    const maxTicks = Math.max(1, Math.floor(REVEAL_MAX_MS / REVEAL_TICK_MS));
-    return Math.max(
-        REVEAL_MIN_BATCH,
-        Math.min(REVEAL_MAX_BATCH, Math.ceil(total / maxTicks))
-    );
-}
-
-/**
- * Draw order: backdrops first, shapes next, then connectors, and bound text
- * last — a connector or a container label appearing before its target looks
- * broken (bindings would dangle).
- */
-function orderForReveal(elements: any[]): any[] {
-    const score = (el: any): number => {
-        const type = el?.type;
-        if (type === "image") return 0;
-        if (type === "arrow" || type === "line") return 3;
-        if (type === "text") return el?.containerId ? 4 : 2;
-        if (type === "freedraw") return 2;
-        return 1;
-    };
-    return elements
-        .map((el, index) => ({ el, index, rank: score(el) }))
-        .sort((a, b) => a.rank - b.rank || a.index - b.index)
-        .map((entry) => entry.el);
-}
-
 function createSnapshot(scene: string, summary?: string): SceneSnapshot {
     const id =
         typeof crypto !== "undefined" && crypto.randomUUID
@@ -1235,65 +1190,12 @@ export function ExcalidrawProvider({
     ]);
     const excalidrawAPIRef = useRef<ExcalidrawImperativeAPI | null>(null);
 
-    // Progressive-reveal state. `token` invalidates an in-flight reveal when a
-    // new scene arrives, the canvas is cleared, or the user starts editing.
-    const revealRef = useRef<{
-        token: number;
-        timer: ReturnType<typeof setTimeout> | null;
-    }>({ token: 0, timer: null });
-    // Enabled unless the server says otherwise (AI_PROGRESSIVE_DRAW=false).
-    const progressiveRef = useRef(true);
-    // Excalidraw fires onChange for PROGRAMMATIC updateScene calls too, so we
-    // time-stamp our own writes to tell them apart from real user edits.
-    const lastProgrammaticUpdateRef = useRef(0);
-
-    const cancelReveal = useCallback(() => {
-        revealRef.current.token += 1;
-        if (revealRef.current.timer) {
-            clearTimeout(revealRef.current.timer);
-            revealRef.current.timer = null;
-        }
-    }, []);
-
-    /** Send a scene to Excalidraw, marking the write as programmatic. */
-    const pushScene = useCallback((scene: any) => {
-        lastProgrammaticUpdateRef.current = Date.now();
-        excalidrawAPIRef.current?.updateScene(scene);
-    }, []);
-
-    useEffect(() => {
-        let cancelled = false;
-        fetch("/api/settings")
-            .then((res) => (res.ok ? res.json() : null))
-            .then((data) => {
-                if (!cancelled && data && typeof data.progressiveDraw === "boolean") {
-                    progressiveRef.current = data.progressiveDraw;
-                }
-            })
-            .catch(() => {});
-        return () => {
-            cancelled = true;
-        };
-    }, []);
-
-    // Stop any reveal when the provider unmounts.
-    useEffect(() => cancelReveal, [cancelReveal]);
-
     const recordScene = useCallback(
         (
             elements: any[],
             appState: Record<string, any>,
             files: Record<string, any>
         ) => {
-            // onChange also fires for our own updateScene calls. Ignoring those
-            // matters twice over: a reveal step must not cancel itself, and an
-            // in-flight reveal must not overwrite sceneData with a partial
-            // element list.
-            if (Date.now() - lastProgrammaticUpdateRef.current < 300) return;
-
-            // A genuine manual edit wins over an in-flight reveal, otherwise the
-            // next batch would immediately overwrite what the user just drew.
-            cancelReveal();
             try {
                 // Excalidraw expects collaborators as Map; strip it to avoid serialization issues
                 const { collaborators, ...restAppState } = appState || {};
@@ -1307,7 +1209,7 @@ export function ExcalidrawProvider({
                 console.error("Failed to serialize Excalidraw scene", error);
             }
         },
-        [cancelReveal]
+        []
     );
 
     const applyScene = useCallback(
@@ -1319,97 +1221,41 @@ export function ExcalidrawProvider({
             try {
                 const normalized = coerceSceneInput(scene);
                 const { appState, ...rest } = normalized;
-                const compatibleAppState = appState as Pick<
-                    AppState,
-                    keyof AppState
-                >;
+                const compatibleScene = {
+                    ...rest,
+                    appState: appState as Pick<AppState, keyof AppState>,
+                };
+                excalidrawAPIRef.current?.updateScene(compatibleScene);
                 const normalizedString = stringifyScene(normalized);
-                const elements = Array.isArray((rest as any).elements)
-                    ? ((rest as any).elements as any[])
-                    : [];
-                const files = (rest as any).files;
-
-                // Any in-flight reveal belongs to the previous scene.
-                cancelReveal();
-
-                const commit = () => {
-                    setSceneData(normalizedString);
-                    setSceneDraft(null);
-                    if (!options?.skipHistory) {
-                        setHistory((prev) => [
-                            ...(options?.replaceHistory
-                                ? prev.slice(0, -1)
-                                : prev),
+                setSceneData(normalizedString);
+                setSceneDraft(null);
+                if (!options?.skipHistory) {
+                    setHistory((prev) => {
+                        const next = [
+                            ...(options?.replaceHistory ? prev.slice(0, -1) : prev),
                             createSnapshot(normalizedString, summary),
-                        ]);
-                    }
-                };
-
-                const api = excalidrawAPIRef.current;
-                const shouldReveal =
-                    progressiveRef.current &&
-                    !!api &&
-                    elements.length >= REVEAL_MIN_ELEMENTS;
-
-                if (!shouldReveal) {
-                    pushScene({
-                        ...rest,
-                        appState: compatibleAppState,
-                    } as any);
-                    commit();
-                    return;
+                        ];
+                        return next;
+                    });
                 }
-
-                // Progressive reveal: clear first, then grow the scene in
-                // batches. State is committed up-front so exports/history see
-                // the final scene even while the animation is still running.
-                const ordered = orderForReveal(elements);
-                const batchSize = computeRevealBatchSize(ordered.length);
-                const token = revealRef.current.token;
-                let shown = 0;
-
-                pushScene({
-                    elements: [],
-                    appState: compatibleAppState,
-                    files,
-                } as any);
-                commit();
-
-                const step = () => {
-                    if (revealRef.current.token !== token) return;
-                    shown = Math.min(ordered.length, shown + batchSize);
-                    pushScene({
-                        elements: ordered.slice(0, shown),
-                    } as any);
-                    if (shown < ordered.length) {
-                        revealRef.current.timer = setTimeout(
-                            step,
-                            REVEAL_TICK_MS
-                        );
-                    } else {
-                        revealRef.current.timer = null;
-                    }
-                };
-                step();
             } catch (error) {
                 console.error("Invalid Excalidraw scene from AI:", error);
             }
         },
-        [cancelReveal, pushScene]
+        []
     );
 
     const clearScene = useCallback(() => {
-        cancelReveal();
         try {
             const parsed = JSON.parse(DEFAULT_SCENE);
-            pushScene(parsed);
+            excalidrawAPIRef.current?.updateScene(parsed);
         } catch {
             // ignore parse errors on the known default
         }
         setSceneData(DEFAULT_SCENE);
         setSceneDraft(null);
         setHistory([createSnapshot(DEFAULT_SCENE, "Canvas reset")]);
-    }, [cancelReveal, pushScene]);
+    }, []);
 
     const value = useMemo(
         () => ({
