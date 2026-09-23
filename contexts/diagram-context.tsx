@@ -23,6 +23,12 @@ interface DiagramContextType {
     exportPng: () => Promise<string>;
     /** Export the current canvas as .drawio XML (used by auto-layout). */
     exportXml: () => Promise<string>;
+    /**
+     * Remember canvas XML coming from a draw.io autosave. Unlike
+     * handleDiagramExport this adds no history entry — it just keeps the
+     * stored copy in step with manual edits.
+     */
+    syncCanvasXml: (xml: string) => void;
 }
 
 const DiagramContext = createContext<DiagramContextType | undefined>(undefined);
@@ -219,10 +225,20 @@ export function DiagramProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
+    /**
+     * Mirror draw.io autosave XML into the stored copy. Manual edits on the
+     * canvas are otherwise only captured by an explicit export, so without this
+     * "edit, then reload (or switch mode)" loses them. No history entry is
+     * added here — autosave fires constantly while editing.
+     */
+    const syncCanvasXml = (xml: string) => {
+        if (!xml || !xml.trim()) return;
+        setChartXML(xml);
+    };
+
     const clearDiagram = () => {
         const emptyDiagram = `<mxfile><diagram name="Page-1" id="page-1"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/></root></mxGraphModel></diagram></mxfile>`;
         loadDiagram(emptyDiagram);
-        setChartXML(emptyDiagram);
         setLatestSvg("");
         setDiagramHistory([]);
     };
@@ -259,6 +275,7 @@ export function DiagramProvider({ children }: { children: React.ReactNode }) {
                 exportPurpose,
                 exportPng,
                 exportXml,
+                syncCanvasXml,
             }}
         >
             {children}

@@ -8,8 +8,27 @@ import { Upload, Download, LayoutGrid } from "lucide-react";
 import { extractDiagramXML } from "@/lib/utils";
 import { xmlToGraph } from "@/lib/xml-graph";
 
+/**
+ * draw.io reports canvas XML either raw or URL-encoded depending on the event;
+ * normalise both and ignore anything that does not look like diagram XML
+ * (rather than storing garbage that would overwrite a good canvas).
+ */
+function normalizeDrawioXml(raw: unknown): string | null {
+    if (typeof raw !== "string" || !raw.trim()) return null;
+    if (raw.includes("<mxfile") || raw.includes("<mxGraphModel")) return raw;
+    try {
+        const decoded = decodeURIComponent(raw);
+        if (decoded.includes("<mxfile") || decoded.includes("<mxGraphModel")) {
+            return decoded;
+        }
+    } catch {
+        /* not URL-encoded — fall through */
+    }
+    return null;
+}
+
 export default function Home() {
-    const { drawioRef, handleDiagramExport, importDiagramFile, exportDiagramFile, chartXML, exportPurpose, exportXml, loadDiagram } = useDiagram();
+    const { drawioRef, handleDiagramExport, importDiagramFile, exportDiagramFile, chartXML, exportPurpose, exportXml, loadDiagram, syncCanvasXml } = useDiagram();
     const [isMobile, setIsMobile] = useState(false);
     const [isChatCollapsed, setIsChatCollapsed] = useState(false);
     const [isDrawIoLoaded, setIsDrawIoLoaded] = useState(false);
@@ -155,6 +174,14 @@ export default function Home() {
         restoredRef.current = true;
         loadDiagram(chartXML);
     }, [isDrawIoLoaded, chartXML, loadDiagram]);
+
+    // draw.io autosaves the canvas after edits. Mirroring those saves into
+    // chartXML is what makes manual edits survive a reload / mode switch —
+    // they are otherwise only captured by an explicit export.
+    const handleDrawioAutoSave = (data: any) => {
+        const xml = normalizeDrawioXml(data?.xml ?? data?.data);
+        if (xml) syncCanvasXml(xml);
+    };
 
     // Handle the export event from draw.io
     const handleDrawioExport = (data: any) => {
@@ -306,6 +333,8 @@ export default function Home() {
                     <div className="flex-1 min-h-0 relative">
                         <DrawIoEmbed
                             ref={drawioRef}
+                            autosave
+                            onAutoSave={handleDrawioAutoSave}
                             onLoad={handleDrawioLoad}
                             onExport={handleDrawioExport}
                             urlParameters={{
