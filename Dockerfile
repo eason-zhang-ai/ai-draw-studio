@@ -18,8 +18,10 @@ RUN npm prune --omit=dev
 FROM node:20-alpine AS runner
 WORKDIR /app
 # drawio-skill scripts (importers / autolayout / restyle / c4) need python3;
-# autolayout needs Graphviz dot
-RUN apk add --no-cache python3 graphviz
+# autolayout needs Graphviz dot (tred ships in the same graphviz package);
+# openapiimports.py hard-exits on a YAML spec unless PyYAML is importable,
+# so py3-yaml is required for .yaml/.yml OpenAPI imports.
+RUN apk add --no-cache python3 graphviz py3-yaml
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=6001
