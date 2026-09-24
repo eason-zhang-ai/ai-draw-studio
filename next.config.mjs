@@ -1,6 +1,21 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  /* config options here */
+  /**
+   * Force the vendored skill assets into the serverless bundle.
+   *
+   * They are read at runtime through fully dynamic paths
+   * (`loadSkillFile(skill, ...parts)` -> `path.join(process.cwd(), "skills", ...)`),
+   * which static file tracing cannot resolve on its own. Its directory-level
+   * inference happens to cover us today, but a missed file fails SILENTLY —
+   * the loader returns null and generation quietly loses the skill reference —
+   * so declare it explicitly rather than depending on that inference.
+   *
+   * `/api/**` (rather than a per-route list) so newly added routes are covered
+   * automatically; the whole directory is only ~1.3MB.
+   */
+  outputFileTracingIncludes: {
+    "/api/**": ["./skills/**"],
+  },
   async headers() {
     return [
       {
