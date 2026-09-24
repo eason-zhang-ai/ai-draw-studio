@@ -19,6 +19,7 @@ import { ChatInput } from "@/components/chat-input";
 import { ChatMessageDisplay } from "./chat-message-display";
 import { useDiagram } from "@/contexts/diagram-context";
 import { replaceNodes, formatXML } from "@/lib/utils";
+import { IMPORT_KINDS, detectImportKind } from "@/lib/import-kinds";
 import { HistoryDialog } from "@/components/history-dialog";
 import { ModeSelector } from "@/components/mode-selector";
 import { ModelConfigDialog } from "@/components/model-config-dialog";
@@ -413,35 +414,73 @@ export default function ChatPanel() {
                 // through the deterministic importers BEFORE fetching the
                 // canvas XML — the imported diagram lands on the canvas and
                 // the model sees it as the current-diagram context.
+                //
+                // Files whose importer walks a directory are sent as ONE batch
+                // so the script sees them side by side and can resolve
+                // cross-file edges (module imports, table relationships).
+                // Sending them one by one used to yield a lone node per file,
+                // or a hard failure for pyimports/jsimports.
                 const codeFiles = files.filter(
                     (f) => !f.type.startsWith("image/")
                 );
                 const importNotes: string[] = [];
+
+                const batches = new Map<string, File[]>();
+                const singles: File[] = [];
                 for (const file of codeFiles) {
+                    const kind = detectImportKind(file.name);
+                    if (!kind || !IMPORT_KINDS[kind].takesDirectory) {
+                        singles.push(file);
+                        continue;
+                    }
+                    const group = batches.get(kind);
+                    if (group) {
+                        group.push(file);
+                    } else {
+                        batches.set(kind, [file]);
+                    }
+                }
+
+                const submissions: Array<{ kind?: string; files: File[] }> = [
+                    ...[...batches.entries()].map(([kind, group]) => ({
+                        kind,
+                        files: group,
+                    })),
+                    ...singles.map((file) => ({ files: [file] })),
+                ];
+
+                for (const submission of submissions) {
+                    const names = submission.files.map((f) => f.name);
+                    const shown = names.length > 1 ? `${names.length} 个文件` : names[0];
                     try {
-                        const content = await file.text();
+                        const payload = {
+                            kind: submission.kind,
+                            files: await Promise.all(
+                                submission.files.map(async (f) => ({
+                                    path: f.name,
+                                    content: await f.text(),
+                                }))
+                            ),
+                        };
                         const res = await fetch("/api/import", {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                                content,
-                                filename: file.name,
-                            }),
+                            body: JSON.stringify(payload),
                         });
                         const data = await res.json();
                         if (res.ok && data.xml) {
                             onDisplayChart(data.xml);
                             importNotes.push(
-                                `✅ 已导入 ${file.name}（${data.label}）`
+                                `✅ 已导入 ${shown}（${data.label}）`
                             );
                         } else {
                             importNotes.push(
-                                `❌ ${file.name} 导入失败：${data?.error || res.status}`
+                                `❌ ${shown} 导入失败：${data?.error || res.status}`
                             );
                         }
                     } catch (error) {
                         importNotes.push(
-                            `❌ ${file.name} 导入失败：${error instanceof Error ? error.message : String(error)}`
+                            `❌ ${shown} 导入失败：${error instanceof Error ? error.message : String(error)}`
                         );
                     }
                 }

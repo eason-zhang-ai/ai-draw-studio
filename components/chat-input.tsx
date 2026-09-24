@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { ButtonWithTooltip } from "@/components/button-with-tooltip";
 import { FilePreviewList } from "./file-preview-list";
+import { IMPORT_ACCEPT } from "@/lib/import-kinds";
 
 interface ChatInputProps {
     input: string;
@@ -232,7 +233,7 @@ export function ChatInput({
                         ref={fileInputRef}
                         className="hidden"
                         onChange={handleFileChange}
-                        accept="image/*,.sql,.tf,.yaml,.yml,.json,.py,.js,.ts,.jsx,.tsx"
+                        accept={`image/*,${IMPORT_ACCEPT}`}
                         multiple
                         disabled={isBusy}
                     />
