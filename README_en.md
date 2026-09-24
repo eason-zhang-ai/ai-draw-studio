@@ -33,6 +33,7 @@ An intelligent diagramming application built with Next.js that harnesses the pow
 - **Flexible Rendering**: Multiple rendering options with fallback mechanisms
 - **Model Configuration**: Customize AI models directly from the browser
 - **Mermaid Smart Enhancements**: one-click "Fit mobile / Improve readability / Architecture review" quick actions with structure-first refinement and review protocols
+- **Code / Config Import**: Upload SQL DDL, Terraform, OpenAPI (JSON/YAML), Python or JS/TS files and let the deterministic `drawio-skill` importers build the diagram directly (no model tokens spent). **Files of the same kind selected together merge into a single diagram**, so cross-file module dependencies and table foreign keys actually show up
 
 ## 🎯 Supported Diagram Types
 
@@ -176,7 +177,7 @@ npm run dev
 
 ### Option 1: Docker (recommended — one-command deploy)
 
-The project ships with a `Dockerfile` and `docker-compose.yaml`; the image already includes Node.js, Python 3, and Graphviz (required by the drawio-skill scripts).
+The project ships with a `Dockerfile` and `docker-compose.yaml`; the image already includes Node.js, Python 3, Graphviz (`dot` / `tred`) and PyYAML — the complete runtime dependency set for the `drawio-skill` scripts (auto-layout / restyle / C4 / file import).
 
 **1. Prerequisites**
 
@@ -238,11 +239,126 @@ docker compose up -d --build    # rebuild the image after pulling new code
 
 > The default port is `6001`; change it in the `ports` section of `docker-compose.yaml` (e.g. `"8080:6001"`).
 
-### Option 2: Vercel
+### Option 2: Vercel (container image)
 
-You can also deploy with the [Vercel Platform](https://vercel.com/new), or develop locally with `npm run dev` / `npm run build && npm start`.
+> ⚠️ **Do not import this repository into Vercel as a plain Next.js project.**
+>
+> Auto-layout, restyle, C4 and file import all `execFile("python3", …)` the vendored `skills/drawio-skill` scripts, and auto-layout pipes through the Graphviz `dot` binary (the importers also use `tred` for transitive reduction). Neither exists in Vercel's default serverless runtime, so a plain deploy makes every one of those routes return 500.
 
-Check out the [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Use Vercel's **Container Images** instead. A `Dockerfile.vercel` at the project root is detected automatically and **all traffic** is routed to the resulting image (Vercel adds the rewrite rule for you). The image is built on Vercel's builders and pushed to the [Vercel Container Registry](https://vercel.com/docs/container-registry) (VCR), so the `python3` / `graphviz` / `py3-yaml` inside it are all available — the Python side keeps full parity with the Docker deployment.
+
+**1. Prerequisites**
+
+- The account/team needs the **Container Images (Beta)** permission. This is the one prerequisite that can actually block you — the feature is documented as `🔒 Permissions Required` and is unusable without it. Step 5 shows how to tell whether it is enabled.
+- Billing follows **Active CPU + provisioned memory** (same as regular Functions), and images stored in VCR cost `$0.10/GB/month`. This image is ~1.54 GB uncompressed and ~456 MB compressed, i.e. **roughly `$0.045/month` per retained image**.
+
+**2. Import the project**
+
+Import this repository at [vercel.com/new](https://vercel.com/new). **Do not** change the Framework Preset — the container image takes over all traffic, and the Next.js framework build is not used.
+
+**3. Configure environment variables**
+
+These values do **not** ship inside the image: `.gitignore` (`.env*`) and `.dockerignore` (`.env`, `.env.local`, …) both exclude them, and `.env` has never been tracked by git — so the image contains no secrets. The code reads `process.env` **at runtime** (`lib/model-provider.ts`), there are no `NEXT_PUBLIC_*` build-time-inlined variables anywhere, and no page reads env. The values can therefore only be injected by the platform **when the container starts** — the equivalent of `docker run -e`, just configured in the Vercel dashboard instead.
+
+Go to Project → Settings → Environment Variables and add the same `AI_*` set the Docker deployment uses (see `env.example` for full meanings):
+
+```
+AI_BASE_URL=https://code-api.erix.vip/v1
+AI_API_KEY=sk-...
+AI_MODEL=deepseek-v4-flash
+AI_MAX_OUTPUT_TOKENS=384000
+AI_THINKING_LEVEL=medium
+AI_MODEL_SUPPORTS_VISION=true
+AI_CONTEXT_LENGTH=1000000
+```
+
+> Mark `AI_API_KEY` as **Sensitive** (it cannot be viewed again afterwards). `AI_SKILL_CONTEXT` may be left empty; empty is treated as `compact`.
+
+Three things that trip people up:
+
+1. **Every variable needs its environments ticked** (Production / Preview / Development). Ticking only Production leaves PR preview deployments without a key, and the app reports "no default model configured". Tick Preview too if you want previews to work.
+2. **Changing a variable requires a redeploy.** Env vars are injected when the container **starts**, and a long-running process does not pick up new values — Vercel prompts you to Redeploy; one click is enough.
+3. **Do not set `PORT`** — see below.
+
+**On the port (why 80)**
+
+Vercel's edge forwards incoming requests to **port 80 inside the container** (docs: *"Vercel routes traffic to port `80` by default, which you can override with the `PORT` environment variable"*). If the container listens elsewhere, nothing accepts the forwarded connection and users get a bare 502 — **this is Vercel's networking contract, not a preference of this project.**
+
+The two Dockerfiles each own one deployment target, and a single start command picks the port from `PORT`:
+
+| File | Used by | `ENV PORT` | Container listens on |
+| --- | --- | --- | --- |
+| `Dockerfile` | Local / VPS (referenced by `docker-compose.yaml`) | `6001` | 6001 |
+| `Dockerfile.vercel` | **Vercel** (Vercel only looks for this filename, never `Dockerfile`) | `80` | 80 |
+
+```jsonc
+// package.json — the port is no longer hard-coded; both targets share one command
+"start": "next start --port ${PORT:-6001}"
+```
+
+`ENV PORT=80` is already set in `Dockerfile.vercel`, so **no port configuration is needed on the Vercel side**. If you genuinely need a different port, change **both** (`Dockerfile.vercel`'s `ENV PORT` and Vercel's `PORT`), or the mismatch turns into a 502 again.
+
+> `EXPOSE` is image metadata only and publishes nothing; what actually decides the listening port is `next start --port`.
+
+**4. Deploy**
+
+Pushing to `main` triggers "build image → push to VCR → go live"; the CLI works too:
+
+```bash
+npx vercel link
+npx vercel --prod
+```
+
+**5. Post-deploy self-check**
+
+```bash
+DOMAIN=https://<your-domain>
+curl -s -o /dev/null -w "page %{http_code}\n" "$DOMAIN/"
+curl -s "$DOMAIN/api/settings"
+```
+
+`/api/settings` should echo the `model` / `baseUrl` you configured on Vercel, with `hasApiKey` set to `true`. If it is `false`, you hit pitfall 1 or 2 above: the variable's environment is not ticked, or you changed it without redeploying.
+
+Then press **auto-layout** once in the UI — if it produces a diagram, `python3` + Graphviz `dot` inside the image are working and the container really is serving traffic. **This is also the only reliable signal that the Container Images permission is actually enabled**: without it Vercel silently degrades to a plain Next.js build, where the page looks fine but every Python-backed route returns 500.
+
+**6. Deployment checklist**
+
+| # | Check | Symptom when it fails |
+| --- | --- | --- |
+| 1 | Account/team has **Container Images (Beta)** enabled | Auto-layout / restyle / C4 / import all return 500 (confirm via step 5) |
+| 2 | All 7 `AI_*` variables present, **Production ticked** | Chat reports "no default model configured"; `/api/settings` shows `hasApiKey: false` |
+| 3 | `PORT` is **not** set | The whole site returns 502 |
+| 4 | Redeployed after changing variables or code | Still the old behaviour / old config |
+| 5 | `curl /api/settings` + one auto-layout after deploying | — (see above) |
+
+**7. Differences from the Docker deployment (known constraints)**
+
+| Item | Docker / VPS | Vercel container image |
+| --- | --- | --- |
+| Request / response body limit | none | **4.5 MB** (`413 FUNCTION_PAYLOAD_TOO_LARGE` beyond that) |
+| Max request duration | none | Hobby 300s (default is also the max) |
+| Instance lifecycle | long-running container | scales to zero after **5 minutes** idle; the next request cold-starts |
+| Container writability | writable | container is **stateless** (`/tmp` is still writable and the Python scripts use `os.tmpdir()`, so they are unaffected) |
+| Persistence | writable container | all persistence already lives in **browser-side IndexedDB**, independent of the server |
+
+About the 4.5 MB limit: this project has ample headroom — the largest exported diagram PNG measured 207 KB, 276 KB once base64-encoded, roughly 16× under the cap. Only uploading an exceptionally large OpenAPI / Terraform file through "file import" could reach it.
+
+About `maxDuration`: in container mode Vercel no longer reads `export const maxDuration` from the route files, so request timeouts fall back to the plan default (300s on Hobby). Every route here finishes well under 120s, so this does not matter.
+
+To reproduce Vercel's behaviour locally with Docker:
+
+```bash
+docker build -f Dockerfile.vercel -t ai-draw-studio:vercel .
+docker run --rm -p 8080:80 ai-draw-studio:vercel   # listens on 80, matching Vercel
+```
+
+### Option 3: Local development
+
+```bash
+npm run dev     # http://localhost:6002
+```
+
+You need `python3`, Graphviz (`dot` / `tred`) and PyYAML installed locally, otherwise the Python-backed routes are unavailable.
 
 ## 📁 Project Structure
 
