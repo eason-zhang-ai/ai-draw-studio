@@ -248,7 +248,7 @@ docker compose up -d --build    # 更新代码后重建镜像
 
 **1. 前置条件**
 
-- 账号/团队需开通 **Container Images (Beta)** 权限；未开通时 Vercel 不会把 `Dockerfile.vercel` 当作部署入口。
+- 账号/团队需开通 **Container Images (Beta)** 权限。这是整条路径上**唯一可能卡住的前置条件** —— 官方文档把该功能标注为 `🔒 Permissions Required`，未开通时无法使用。判定方法见下方第 5 步自检。
 - 计费走 **Active CPU + 预置内存**（与普通 Functions 相同），镜像存储在 VCR 按 `$0.10/GB/月` 计费。本镜像未压缩约 1.54 GB、压缩后约 456 MB，即**每个留存镜像约 `$0.045/月`**。
 
 **2. 导入项目**
@@ -256,6 +256,8 @@ docker compose up -d --build    # 更新代码后重建镜像
 在 [vercel.com/new](https://vercel.com/new) 导入本仓库。**不要**手动改 Framework Preset —— 容器镜像会接管全部流量，不会走 Next.js 的框架构建流程。
 
 **3. 配置环境变量**
+
+变量**不进镜像**：`.gitignore`（`.env*`）与 `.dockerignore`（`.env` / `.env.local` / …）双重排除，`.env` 也从未被 git 跟踪，所以镜像里没有密钥文件；而代码是在**运行时**读 `process.env`（`lib/model-provider.ts`），全项目没有 `NEXT_PUBLIC_*` 这类构建期内联变量，页面也不读 env。因此这些值只能由平台在**容器启动时注入** —— 等价于 `docker run -e`，只是配置地点换成了 Vercel 控制台。
 
 Project → Settings → Environment Variables，加入与 Docker 部署同一套 `AI_*` 变量（含义见 `env.example`）：
 
@@ -269,9 +271,33 @@ AI_MODEL_SUPPORTS_VISION=true
 AI_CONTEXT_LENGTH=1000000
 ```
 
-> `.env` 被 `.gitignore` / `.dockerignore` 双重排除，**不会**进镜像，因此这些值必须在 Vercel 侧显式配置。
->
-> **不要设置 `PORT`**：`Dockerfile.vercel` 已固定监听 `80`（Vercel 的默认期望端口）。确实要换端口时，需同时改 `Dockerfile.vercel` 的 `ENV PORT` 并在 Vercel 里设 `PORT`，两边保持一致。
+> `AI_API_KEY` 建议勾选 **Sensitive**（保存后不可再查看）。`AI_SKILL_CONTEXT` 可留空，留空时按 `compact` 处理。
+
+三个容易踩的坑：
+
+1. **每条变量都要勾选生效环境**（Production / Preview / Development）。只勾 Production 的话，PR 预览部署会取不到 key 而报「未配置默认模型」。想让预览部署也能用，Preview 也要勾。
+2. **改完必须重新部署才生效**。环境变量是在容器**启动时**注入的，常驻进程不会热更新 —— Vercel 会提示 Redeploy，点一下即可。
+3. **不要设置 `PORT`**，理由见下。
+
+**关于端口（为什么是 80）**
+
+Vercel 的边缘收到请求后，会把请求转发到**容器内部的 80 端口**（官方文档：*"Vercel routes traffic to port `80` by default, which you can override with the `PORT` environment variable"*）。容器若监听在别的端口，转发过来时没有进程接受连接，用户看到的就是 502 —— **这是 Vercel 的网络约定，不是本项目的偏好。**
+
+两个 Dockerfile 各管一边，靠同一个启动命令读 `PORT` 来区分：
+
+| 文件 | 谁在用 | `ENV PORT` | 容器监听 |
+| --- | --- | --- | --- |
+| `Dockerfile` | 本地 / VPS（`docker-compose.yaml` 引用）| `6001` | 6001 |
+| `Dockerfile.vercel` | **Vercel**（Vercel 只认这个文件名，不看 `Dockerfile`）| `80` | 80 |
+
+```jsonc
+// package.json —— 端口不再硬编码，改为读环境变量，两个场景共用同一个命令
+"start": "next start --port ${PORT:-6001}"
+```
+
+`ENV PORT=80` 已经写在 `Dockerfile.vercel` 里，所以**在 Vercel 侧无需任何端口配置**。确实要换端口时须**两处同改**（`Dockerfile.vercel` 的 `ENV PORT` + Vercel 的同名 `PORT`），否则两边不一致又会变成 502。
+
+> `EXPOSE` 只是镜像元数据，不真的发布端口；真正决定监听哪个端口的是 `next start --port`。
 
 **4. 部署**
 
@@ -282,7 +308,29 @@ npx vercel link
 npx vercel --prod
 ```
 
-**5. 与 Docker 部署的差异（已知约束）**
+**5. 部署后自检**
+
+```bash
+DOMAIN=https://<你的域名>
+curl -s -o /dev/null -w "页面 %{http_code}\n" "$DOMAIN/"
+curl -s "$DOMAIN/api/settings"
+```
+
+`/api/settings` 应返回你在 Vercel 配的 `model` / `baseUrl`，且 `hasApiKey` 为 `true`。若为 `false`，就是上面第 1、2 条坑：变量没勾选当前环境，或者改完没重新部署。
+
+然后回到页面点一次**自动布局** —— 能出图即证明镜像里的 `python3` + Graphviz `dot` 生效、容器确实接管了流量。**这也是判断 Container Images 权限是否真的已开通的决定性信号**：权限没开时 Vercel 会退化成普通 Next.js 构建，页面正常但所有 Python 接口 500。
+
+**6. 部署检查清单**
+
+| # | 检查项 | 失败症状 |
+| --- | --- | --- |
+| 1 | 账号/团队已开通 **Container Images (Beta)** | 页面正常，但自动布局/换肤/C4/导入全部 500 |
+| 2 | 7 条 `AI_*` 变量齐备，且**勾选了 Production 环境** | 对话报「未配置默认模型」；`/api/settings` 的 `hasApiKey` 为 `false` |
+| 3 | **未**设置 `PORT` | 全站 502 |
+| 4 | 改过变量/代码后**重新部署**过 | 仍是旧行为、旧配置 |
+| 5 | 部署后 `curl /api/settings` + 点一次自动布局 | —（见上）|
+
+**7. 与 Docker 部署的差异（已知约束）**
 
 | 项 | Docker / VPS | Vercel 容器镜像 |
 | --- | --- | --- |
