@@ -44,6 +44,10 @@ README.md
 LICENSE
 *.pdf
 
+# Python bytecode caches from the drawio-skill scripts
+__pycache__
+*.pyc
+
 # Misc
 *.swp
 *.swo

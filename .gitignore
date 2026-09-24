@@ -20,6 +20,10 @@
 # production
 /build
 
+# python bytecode caches (produced when the drawio-skill scripts run)
+__pycache__/
+*.pyc
+
 # misc
 .DS_Store
 *.pem
