@@ -175,7 +175,7 @@ npm run dev
 
 ### 方式一：Docker（推荐，本地/服务器一键部署）
 
-项目已内置 `Dockerfile` 与 `docker-compose.yaml`，镜像内已包含 Node、Python3、Graphviz（drawio-skill 脚本所需）。
+项目已内置 `Dockerfile` 与 `docker-compose.yaml`，镜像内已包含 Node、Python3、Graphviz（`dot` / `tred`）与 PyYAML —— 即 `drawio-skill` 脚本（自动布局 / 换肤 / C4 / 文件导入）所需的全部运行时依赖。
 
 **1. 前置条件**
 
@@ -237,11 +237,78 @@ docker compose up -d --build    # 更新代码后重建镜像
 
 > 端口默认 `6001`，可在 `docker-compose.yaml` 的 `ports` 中修改（如 `"8080:6001"`）。
 
-### 方式二：Vercel
+### 方式二：Vercel（容器镜像）
 
-也可以使用 Next.js 创建者提供的 [Vercel 平台](https://vercel.com/new) 部署，或在本地 `npm run dev` / `npm run build && npm start` 开发调试。
+> ⚠️ **不要把本仓库按普通 Next.js 项目直接导入 Vercel。**
+>
+> 自动布局、换肤、C4、文件导入这几条链路会 `execFile("python3", …)` 去跑 `skills/drawio-skill` 的脚本，并依赖 Graphviz 的 `dot`（布局）和 `tred`（传递归约）。Vercel 默认的 Serverless 运行时里没有这些二进制，直接部署会让上述接口全部 500。
 
-查看 [Next.js 部署文档](https://nextjs.org/docs/app/building-your-application/deploying)了解更多详情。
+正确做法是用 Vercel 的 **Container Images**：仓库根目录的 `Dockerfile.vercel` 会被自动识别，**所有流量**被路由到该镜像（Vercel 会为它自动加 rewrite 规则）。镜像在 Vercel 构建机上构建、推送到 [Vercel Container Registry](https://vercel.com/docs/container-registry)（VCR）后以 Function 形式运行，因此镜像内的 `python3` / `graphviz` / `py3-yaml` 全部可用，Python 侧能力与 Docker 部署完全一致。
+
+**1. 前置条件**
+
+- 账号/团队需开通 **Container Images (Beta)** 权限；未开通时 Vercel 不会把 `Dockerfile.vercel` 当作部署入口。
+- 计费走 **Active CPU + 预置内存**（与普通 Functions 相同），镜像存储在 VCR 按 `$0.10/GB/月` 计费。本镜像未压缩约 1.54 GB、压缩后约 456 MB，即**每个留存镜像约 `$0.045/月`**。
+
+**2. 导入项目**
+
+在 [vercel.com/new](https://vercel.com/new) 导入本仓库。**不要**手动改 Framework Preset —— 容器镜像会接管全部流量，不会走 Next.js 的框架构建流程。
+
+**3. 配置环境变量**
+
+Project → Settings → Environment Variables，加入与 Docker 部署同一套 `AI_*` 变量（含义见 `env.example`）：
+
+```
+AI_BASE_URL=https://code-api.erix.vip/v1
+AI_API_KEY=sk-...
+AI_MODEL=deepseek-v4-flash
+AI_MAX_OUTPUT_TOKENS=384000
+AI_THINKING_LEVEL=medium
+AI_MODEL_SUPPORTS_VISION=true
+AI_CONTEXT_LENGTH=1000000
+```
+
+> `.env` 被 `.gitignore` / `.dockerignore` 双重排除，**不会**进镜像，因此这些值必须在 Vercel 侧显式配置。
+>
+> **不要设置 `PORT`**：`Dockerfile.vercel` 已固定监听 `80`（Vercel 的默认期望端口）。确实要换端口时，需同时改 `Dockerfile.vercel` 的 `ENV PORT` 并在 Vercel 里设 `PORT`，两边保持一致。
+
+**4. 部署**
+
+推送到 `main` 即触发「构建镜像 → 推送 VCR → 上线」；也可用 CLI：
+
+```bash
+npx vercel link
+npx vercel --prod
+```
+
+**5. 与 Docker 部署的差异（已知约束）**
+
+| 项 | Docker / VPS | Vercel 容器镜像 |
+| --- | --- | --- |
+| 请求体 / 响应体上限 | 无 | **4.5 MB**（超出返回 `413 FUNCTION_PAYLOAD_TOO_LARGE`）|
+| 单请求最长时长 | 无 | Hobby 300s（默认即最大）|
+| 实例生命周期 | 容器常驻 | 无流量 **5 分钟**后缩容到 0，下次请求冷启动 |
+| 容器可写性 | 可写 | 容器 **stateless**（`/tmp` 仍可写，Python 临时文件走 `os.tmpdir()`，不受影响）|
+| 持久化 | 容器可写 | 全部持久化本就在**浏览器端 IndexedDB**，与服务端无关 |
+
+关于 4.5 MB：本项目余量充足 —— 实测最大的导出图 PNG 约 207 KB，base64 后约 276 KB，距上限约 16 倍。只有「文件导入」上传超大 OpenAPI / Terraform 文件时才有可能触顶。
+
+关于 `maxDuration`：容器模式下 Vercel 不再读取路由里 `export const maxDuration`，请求超时回退到套餐默认值（Hobby 300s）。本项目所有接口实际耗时都在 120s 以内，不受影响。
+
+在本地用 Docker 复现 Vercel 行为：
+
+```bash
+docker build -f Dockerfile.vercel -t ai-draw-studio:vercel .
+docker run --rm -p 8080:80 ai-draw-studio:vercel   # 默认监听 80，与 Vercel 一致
+```
+
+### 方式三：本地开发
+
+```bash
+npm run dev     # http://localhost:6002
+```
+
+本机需自行准备 `python3`、Graphviz（`dot` / `tred`）与 PyYAML，否则依赖 Python 的接口不可用。
 
 ## 📁 项目结构
 
