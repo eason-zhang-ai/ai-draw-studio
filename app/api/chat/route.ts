@@ -12,6 +12,10 @@ import {
   messageTokens,
   type BudgetableMessage,
 } from "@/lib/context-budget";
+import {
+  getRuntimeCapabilities,
+  type RuntimeCapabilities,
+} from "@/lib/runtime-capabilities";
 
 export const maxDuration = 90
 const MAX_CONTEXT_MESSAGES = 3;
@@ -39,8 +43,24 @@ function compactXmlContext(xml?: string, maxChars = MAX_XML_CONTEXT_CHARS) {
 ${xml.slice(-tailLength)}`;
 }
 
-const FAST_DRAWIO_SYSTEM_MESSAGE = `
-You are a professional draw.io diagram assistant. Emit exactly ONE tool call per turn (display_diagram / edit_diagram / search_shapes / ai_icon / layout_diagram / apply_style / c4_diagram). Keep hidden reasoning minimal — think in seconds, then act. Never return raw XML as plain text.`;
+/**
+ * The advertised tool list is derived from what this runtime can actually
+ * serve: the three Python-backed tools are omitted when python3 / Graphviz are
+ * missing, so the model never plans around a tool that would return 500.
+ */
+function fastDrawioSystemMessage(caps: RuntimeCapabilities) {
+  const tools = [
+    "display_diagram",
+    "edit_diagram",
+    "search_shapes",
+    "ai_icon",
+    ...(caps.autoLayout ? ["layout_diagram"] : []),
+    ...(caps.stylePresets ? ["apply_style"] : []),
+    ...(caps.c4 ? ["c4_diagram"] : []),
+  ];
+  return `
+You are a professional draw.io diagram assistant. Emit exactly ONE tool call per turn (${tools.join(" / ")}). Keep hidden reasoning minimal — think in seconds, then act. Never return raw XML as plain text.`;
+}
 
 export async function POST(req: Request) {
   try {
@@ -86,12 +106,14 @@ export async function POST(req: Request) {
       providerOptions,
     } = resolveModel(modelConfig);
 
-    const composedSystem = `${FAST_DRAWIO_SYSTEM_MESSAGE}
+    const caps = await getRuntimeCapabilities();
+
+    const composedSystem = `${fastDrawioSystemMessage(caps)}
 
 ## drawio-skill authoring reference
 The rules below come from the drawio-skill knowledge base. Follow them for XML structure, shapes, containers, edges, palette and layout.
 
-${buildDrawioSkillContext(lastMessageText)}`;
+${buildDrawioSkillContext(lastMessageText, 18000, caps.autoLayout)}`;
 
     // Context-length budget (front-end form > env AI_CONTEXT_LENGTH > no
     // trimming). Fixed costs first (system + user text + images), then
@@ -284,7 +306,12 @@ ${lastMessageText}
                   return lines.join("\n\n");
               },
           },
-          layout_diagram: {
+          // The three tools below shell out to the vendored drawio-skill
+          // scripts, which need python3 (+ Graphviz for auto-layout and C4).
+          // Offer each one only when the runtime can actually serve it, so a
+          // plain Vercel deploy never sees them instead of planning around a
+          // tool whose route would return 500. See lib/runtime-capabilities.ts.
+          ...(caps.autoLayout ? { layout_diagram: {
               description: `For LARGE diagrams (15+ nodes, dependency/call graphs, module structure, infrastructure maps): describe the graph STRUCTURALLY — nodes and edges WITHOUT coordinates — and a deterministic Graphviz layout engine places the nodes and routes the edges orthogonally around them. Nodes may carry an optional style string, a group path ('core/db' creates nested containers), width/height. Edges reference node ids.`,
               inputSchema: z.object({
                   direction: z.enum(["TB", "LR"]).optional().describe("layout rank direction, default TB"),
@@ -302,14 +329,14 @@ ${lastMessageText}
                       label: z.string().optional(),
                   })).describe("all graph edges"),
               }),
-          },
-          apply_style: {
+          } } : {}),
+          ...(caps.stylePresets ? { apply_style: {
               description: `Apply a named style preset to the whole diagram (re-theme without touching layout). Use when the user asks for dark mode, a corporate theme, hand-drawn look, or colorblind-safe colors.`,
               inputSchema: z.object({
                   preset: z.enum(["dark", "corporate", "handdrawn", "colorblind-safe", "default"]).describe("style preset name"),
               }),
-          },
-          c4_diagram: {
+          } } : {}),
+          ...(caps.c4 ? { c4_diagram: {
               description: `Generate a C4 model (System Context / Container / Component levels) as a multi-page diagram with click-to-drill-down links between pages. Describe each level's elements (id, type person/system/external/container/database/component, label, tech/desc optional, children = next level name for drill-down) and relations (from, to, label).`,
               inputSchema: z.object({
                   levels: z.array(z.object({
@@ -329,7 +356,7 @@ ${lastMessageText}
                       })),
                   })),
               }),
-          },
+          } } : {}),
       },
         temperature: 0,
         // Server-executed tools (search_shapes / ai_icon) need follow-up model

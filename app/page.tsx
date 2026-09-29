@@ -4,9 +4,10 @@ import { DrawIoEmbed } from "react-drawio";
 import { CollapsibleChatPanel } from "@/components/collapsible-chat-panel";
 import { useDiagram } from "@/contexts/diagram-context";
 import { Button } from "@/components/ui/button";
-import { Upload, Download, LayoutGrid, Undo2 } from "lucide-react";
+import { Upload, Download, LayoutGrid, Undo2, Info } from "lucide-react";
 import { extractDiagramXML } from "@/lib/utils";
 import { xmlToGraph } from "@/lib/xml-graph";
+import { useRuntimeCapabilities } from "@/lib/use-runtime-capabilities";
 
 /**
  * Style presets, in dropdown order. Kept in one place so the option labels and
@@ -52,6 +53,10 @@ export default function Home() {
     const [layoutNotice, setLayoutNotice] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const undoButtonRef = useRef<HTMLButtonElement>(null);
+    // Auto-layout and the style presets both drive the vendored Python scripts,
+    // so they only exist where the runtime has python3 (+ Graphviz). A plain
+    // Vercel deploy has neither and hides them instead of failing on click.
+    const caps = useRuntimeCapabilities();
     // Style presets are a "switch", not a stack: every preset is remapped
     // from the ORIGINAL (pre-restyle) diagram so switching dark -> corporate
     // is a clean corporate, not corporate-over-dark. Snapshot the base on the
@@ -343,6 +348,15 @@ export default function Home() {
                         fits the empty stretch of draw.io's toolbar. */}
                     {isDrawIoLoaded && (
                         <div className="absolute top-2.5 right-20 z-10 flex items-center gap-1.5 animate-in fade-in duration-300">
+                            {caps && !caps.autoLayout && !caps.stylePresets && (
+                                <span
+                                    className="flex size-7 items-center justify-center rounded-[4px] bg-amber-100 text-amber-700 shadow-sm"
+                                    title="此运行环境没有 python3 / Graphviz，自动布局、样式预设、C4、代码文件导入均不可用（本部署不含容器镜像）。其余功能不受影响。"
+                                >
+                                    <Info className="h-3.5 w-3.5" />
+                                </span>
+                            )}
+                            {caps?.stylePresets && (
                             <select
                                 className="h-7 rounded-[4px] border border-[#b8d4e8] bg-[#c2e7ff] px-1.5 text-[#3F3F3F] shadow-sm hover:bg-[#abcfe7]/90"
                                 style={{ fontSize: "14px", fontWeight: 550 }}
@@ -365,6 +379,7 @@ export default function Home() {
                                     </option>
                                 ))}
                             </select>
+                            )}
                             <Button
                                 ref={undoButtonRef}
                                 onClick={undoTranform}
@@ -380,6 +395,7 @@ export default function Home() {
                             >
                                 <Undo2 className="h-3.5 w-3.5" />
                             </Button>
+                            {caps?.autoLayout && (
                             <Button
                                 onClick={runAutoLayout}
                                 variant="secondary"
@@ -390,6 +406,7 @@ export default function Home() {
                             >
                                 <LayoutGrid className="h-3.5 w-3.5" />
                             </Button>
+                            )}
                             <Button
                                 onClick={triggerFileInput}
                                 variant="secondary"

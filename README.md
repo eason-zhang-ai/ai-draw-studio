@@ -352,7 +352,42 @@ docker build -f Dockerfile.vercel -t ai-draw-studio:vercel .
 docker run --rm -p 8080:80 ai-draw-studio:vercel   # 默认监听 80，与 Vercel 一致
 ```
 
-### 方式三：本地开发
+### 方式三：Vercel（原生部署 —— 自动降级）
+
+不想开通 Container Images 权限、或想走 Vercel 常规构建流程时，可以把本仓库**按普通 Next.js 项目**直接导入 Vercel。代价是失去 4 个依赖本地 `python3` / Graphviz 的功能，其余一切照常。
+
+**为什么这样也能跑**：全项目只有 5 个文件会起子进程，其中 4 个（`layout` / `restyle` / `c4` / `import`）硬依赖 Python；第 5 个 `kroki/render` 在本地 `dot` 失败时会**自动回退到远程 Kroki**。而 `skills/` 下的提示词、形状索引、图标清单都是纯 TS 读取的静态数据，已由 `next.config.mjs` 的 `outputFileTracingIncludes` 打进函数包 —— 所以 `search_shapes` / `ai_icon` 两个工具在无 Python 环境下照常工作。
+
+**降级是自动的**：服务端启动时探测一次 `python3` / `dot`（`lib/runtime-capabilities.ts`，结果在进程内缓存），并通过 `/api/capabilities` 告知前端。
+
+| 功能 | 有 Python（Docker / 容器镜像）| 无 Python（原生部署）|
+| --- | --- | --- |
+| 对话生成 / 编辑图表 | ✅ | ✅ |
+| 形状检索 / AI 图标 | ✅ | ✅ |
+| Mermaid / PlantUML / Kroki / Graphviz / Excalidraw | ✅ | ✅ |
+| Graphviz 自动布局 | ✅ | ⛔ 按钮隐藏 |
+| 样式预设 | ✅ | ⛔ 下拉隐藏 |
+| C4 多页图 | ✅ | ⛔ 工具不注册 |
+| 代码 / 配置文件导入 | ✅ | ⛔ 跳过附件并提示 |
+
+两处同时降级：
+
+1. **UI** —— 自动布局按钮与样式下拉不渲染，改为工具条上一个琥珀色提示图标（悬停说明原因）；代码附件会被跳过并给出提示，图片附件不受影响
+2. **模型** —— `layout_diagram` / `apply_style` / `c4_diagram` 三个工具**根本不注册**，系统提示里的工具列表同步收缩，模型不会去计划一个不存在的工具
+
+实测（同一个镜像，仅收窄 `PATH` 去掉 `python3` / `dot`）：
+
+```
+有 Python: 模型看到 7 个工具；/api/layout -> 200，正常出图
+无 Python: 模型看到 4 个工具；/api/layout -> 500 spawn python3 ENOENT（已被 UI 拦下）
+           且 search_shapes 仍返回真实样式 shape=mxgraph.aws3.lambda
+```
+
+也就是说，原生部署是一个**少了 4 个功能的完整可用应用**，而不是一个到处报错的残缺版本。
+
+> 想要完整功能请用**方式二**（容器镜像）；只要能画图、能对话，方式三更省事——不需要任何权限审批。
+
+### 方式四：本地开发
 
 ```bash
 npm run dev     # http://localhost:6002

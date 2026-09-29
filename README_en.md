@@ -353,7 +353,42 @@ docker build -f Dockerfile.vercel -t ai-draw-studio:vercel .
 docker run --rm -p 8080:80 ai-draw-studio:vercel   # listens on 80, matching Vercel
 ```
 
-### Option 3: Local development
+### Option 3: Vercel (native deploy — degrades automatically)
+
+If you would rather not request the Container Images permission, or want Vercel's ordinary build pipeline, you can import this repository as a **plain Next.js project**. The cost is the four features that shell out to a local `python3` / Graphviz; everything else works.
+
+**Why this is viable**: only five files in the project spawn a subprocess. Four of them (`layout` / `restyle` / `c4` / `import`) hard-require Python; the fifth, `kroki/render`, **falls back to remote Kroki** when the local `dot` fails. And the prompts, shape index and icon manifest under `skills/` are static data read by plain TypeScript, already pinned into the function bundle by `outputFileTracingIncludes` in `next.config.mjs` — so the `search_shapes` / `ai_icon` tools keep working without Python.
+
+**The degradation is automatic**: on startup the server probes `python3` / `dot` once (`lib/runtime-capabilities.ts`, cached for the life of the process) and reports the result through `/api/capabilities`.
+
+| Feature | With Python (Docker / container image) | Without Python (native deploy) |
+| --- | --- | --- |
+| Chat diagram generation / editing | ✅ | ✅ |
+| Shape search / AI icons | ✅ | ✅ |
+| Mermaid / PlantUML / Kroki / Graphviz / Excalidraw | ✅ | ✅ |
+| Graphviz auto-layout | ✅ | ⛔ button hidden |
+| Style presets | ✅ | ⛔ dropdown hidden |
+| C4 multi-page diagrams | ✅ | ⛔ tool not registered |
+| Code / config file import | ✅ | ⛔ attachments skipped, with a notice |
+
+Two things degrade together:
+
+1. **The UI** — the auto-layout button and the style dropdown are not rendered; an amber info icon in the toolbar explains why on hover. Code attachments are skipped with a notice; image attachments are unaffected.
+2. **The model** — `layout_diagram` / `apply_style` / `c4_diagram` are **not registered at all**, and the tool list in the system prompt shrinks to match, so the model never plans around a tool that does not exist.
+
+Measured against the same image with only `PATH` narrowed to drop `python3` / `dot`:
+
+```
+with Python:    model sees 7 tools;  /api/layout -> 200, diagram produced
+without Python: model sees 4 tools;  /api/layout -> 500 spawn python3 ENOENT (now unreachable from the UI)
+                and search_shapes still returns a real style: shape=mxgraph.aws3.lambda
+```
+
+In other words, the native deploy is a **complete, usable app minus four features** — not a broken build that errors everywhere.
+
+> For the full feature set use **Option 2** (container image); if all you need is chat-driven diagramming, Option 3 is less hassle — no permission request required.
+
+### Option 4: Local development
 
 ```bash
 npm run dev     # http://localhost:6002

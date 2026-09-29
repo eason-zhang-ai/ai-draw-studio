@@ -130,7 +130,15 @@ const COMPACT_DRAWIO_REF = `## draw.io XML essentials
 - Shape keywords: rounded=1 (rounded rect/service), ellipse (start/end/oval), rhombus (decision), shape=cylinder3 (database), swimlane (titled container).
 - Keep everything in one viewport (x 0-900, y 0-650); align peer nodes; consistent sizes; no overlaps; labels short.
 - Palette (fill/stroke): blue #dae8fc/#6c8ebf, green #d5e8d4/#82b366, yellow #fff2cc/#d6b656, orange #ffe6cc/#d79b00, red #f8cecc/#b85450, purple #e1d5e7/#9673a6.
-- For vendor/AI logos, use search_shapes / ai_icon — never guess a shape=mxgraph.* name.
+- For vendor/AI logos, use search_shapes / ai_icon — never guess a shape=mxgraph.* name.`;
+
+/**
+ * Only appended when the runtime can actually serve the `layout_diagram` tool.
+ * A plain Vercel deploy has no python3/Graphviz, and telling the model to reach
+ * for a tool that is not registered just makes it promise something it cannot
+ * deliver.
+ */
+const COMPACT_LAYOUT_HINT = `
 - For large graphs (15+ nodes), use layout_diagram (structural nodes+edges) instead of hand-placing coordinates.`;
 
 /** One-line diagram-type hints (kept tiny to avoid reasoning blow-up). */
@@ -203,11 +211,16 @@ function buildFullDrawioSkillContext(userText: string, budget: number): string {
     return joined.length > budget ? joined.slice(0, budget) : joined;
 }
 
-export function buildDrawioSkillContext(userText: string, budget = 18000): string {
+export function buildDrawioSkillContext(
+    userText: string,
+    budget = 18000,
+    canAutoLayout = true
+): string {
     if (SKILL_CONTEXT_MODE === "full") {
         return buildFullDrawioSkillContext(userText, budget);
     }
 
+    const layoutHint = canAutoLayout ? COMPACT_LAYOUT_HINT : "";
     const lower = userText.toLowerCase();
     const hints = COMPACT_TYPE_HINTS.filter((entry) =>
         entry.keywords.some((k) => lower.includes(k))
@@ -216,9 +229,9 @@ export function buildDrawioSkillContext(userText: string, budget = 18000): strin
         .map((entry) => entry.hint);
 
     if (hints.length > 0) {
-        return `${COMPACT_DRAWIO_REF}\n\n## Diagram type hints\n${hints
+        return `${COMPACT_DRAWIO_REF}${layoutHint}\n\n## Diagram type hints\n${hints
             .map((h) => `- ${h}`)
             .join("\n")}`;
     }
-    return COMPACT_DRAWIO_REF;
+    return `${COMPACT_DRAWIO_REF}${layoutHint}`;
 }

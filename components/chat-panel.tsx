@@ -24,6 +24,7 @@ import { HistoryDialog } from "@/components/history-dialog";
 import { ModeSelector } from "@/components/mode-selector";
 import { ModelConfigDialog } from "@/components/model-config-dialog";
 import { useModelConfig } from "@/contexts/model-config-context";
+import { useRuntimeCapabilities } from "@/lib/use-runtime-capabilities";
 
 export default function ChatPanel() {
     const {
@@ -36,6 +37,9 @@ export default function ChatPanel() {
         exportPng,
     } = useDiagram();
     const { config: modelConfig } = useModelConfig();
+    // Code-file attachments are converted by the vendored Python importers, so
+    // they are only accepted where the runtime has python3 + Graphviz.
+    const caps = useRuntimeCapabilities();
 
     // Vision self-check (drawio-skill Step 5): after each display_diagram,
     // export a PNG, ask the vision model for layout issues, and apply
@@ -424,6 +428,17 @@ export default function ChatPanel() {
                     (f) => !f.type.startsWith("image/")
                 );
                 const importNotes: string[] = [];
+
+                // Skip code attachments outright when the runtime has no
+                // python3 / Graphviz, rather than firing requests that can only
+                // come back 500. Images are unaffected — they still go to the
+                // model as vision input.
+                if (codeFiles.length > 0 && !caps?.fileImport) {
+                    importNotes.push(
+                        `⚠️ 已跳过 ${codeFiles.length} 个代码文件：此环境未安装 python3 / Graphviz，代码导入不可用（图片附件不受影响）`
+                    );
+                    codeFiles.length = 0;
+                }
 
                 const batches = new Map<string, File[]>();
                 const singles: File[] = [];
