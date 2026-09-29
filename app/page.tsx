@@ -251,13 +251,18 @@ export default function Home() {
     return (
         <div className="flex h-screen bg-gray-100 overflow-hidden">
             <div className={`h-full p-1 transition-all duration-300 ${isChatCollapsed ? 'w-full' : 'w-3/4'}`}>
-                <div className="h-full flex flex-col">
-                    {/* Toolbar bar — rendered ABOVE the Draw.io editor so it
-                        never overlaps the editor's own buttons. */}
+                <div className="h-full flex flex-col relative">
+                    {/* Floating toolbar — overlaid on the Draw.io editor the way
+                        the upstream project does it, so it reads as part of
+                        draw.io's own toolbar instead of pushing the canvas down
+                        by a whole row. The right offset clears draw.io's own
+                        top-right controls (they sit within ~70px of the right
+                        edge), and the buttons stay compact so the whole strip
+                        fits the empty stretch of draw.io's toolbar. */}
                     {isDrawIoLoaded && (
-                        <div className="flex items-center gap-2 px-2 py-1.5 border-b bg-white shrink-0">
+                        <div className="absolute top-2.5 right-20 z-10 flex items-center gap-1.5 animate-in fade-in duration-300">
                             <select
-                                className="h-8 rounded-[4px] border border-[#b8d4e8] bg-[#c2e7ff] px-1.5 text-[#3F3F3F] shadow-sm hover:bg-[#abcfe7]/90"
+                                className="h-7 rounded-[4px] border border-[#b8d4e8] bg-[#c2e7ff] px-1.5 text-[#3F3F3F] shadow-sm hover:bg-[#abcfe7]/90"
                                 style={{ fontSize: "14px", fontWeight: 550 }}
                                 title="应用样式预设（暗色/企业/手绘/色盲安全）"
                                 defaultValue=""
@@ -278,45 +283,44 @@ export default function Home() {
                                 <option value="colorblind-safe">色盲安全</option>
                                 <option value="dark">暗色</option>
                             </select>
-                            <Button 
-                                onClick={runAutoLayout} 
-                                variant="secondary" 
-                                size="sm" 
+                            <Button
+                                onClick={runAutoLayout}
+                                variant="secondary"
+                                size="icon"
                                 disabled={layoutBusy}
-                                className="h-8 bg-[#c2e7ff] hover:bg-[#abcfe7]/90 text-[#3F3F3F] shadow-sm rounded-[4px]"
+                                className="size-7 bg-[#c2e7ff] hover:bg-[#abcfe7]/90 text-[#3F3F3F] shadow-sm rounded-[4px]"
                                 title="用 Graphviz 重新自动布局当前图表"
-                                style={{ fontSize: '14px', fontWeight: 550}}
                             >
-                                <LayoutGrid className="h-3 w-3 mr-1" />
-                                <span className="text-xs" style={{ fontSize: '14px' }}>自动布局</span>
+                                <LayoutGrid className="h-3.5 w-3.5" />
                             </Button>
-                            <Button 
-                                onClick={triggerFileInput} 
-                                variant="secondary" 
-                                size="sm" 
-                                className="h-8 bg-[#c2e7ff] hover:bg-[#abcfe7]/90 text-[#3F3F3F] shadow-sm rounded-[4px]"
-                                title="Import .drawio file"
-                                style={{ fontSize: '14px', fontWeight: 550}}
+                            <Button
+                                onClick={triggerFileInput}
+                                variant="secondary"
+                                size="icon"
+                                className="size-7 bg-[#c2e7ff] hover:bg-[#abcfe7]/90 text-[#3F3F3F] shadow-sm rounded-[4px]"
+                                title="导入 .drawio 文件"
                             >
-                                <Upload className="h-3 w-3 mr-1" />
-                                <span className="text-xs" style={{ fontSize: '14px' }}>导入</span>
+                                <Upload className="h-3.5 w-3.5" />
                             </Button>
-                            <Button 
-                                onClick={exportDiagramFile} 
-                                variant="secondary" 
-                                size="sm" 
-                                className="h-8 bg-[#c2e7ff] hover:bg-[#abcfe7]/90 text-[#3F3F3F] shadow-sm rounded-[4px]"
-                                title="Export as .drawio file"
-                                style={{ fontSize: '14px', fontWeight: 550}}
+                            <Button
+                                onClick={exportDiagramFile}
+                                variant="secondary"
+                                size="icon"
+                                className="size-7 bg-[#c2e7ff] hover:bg-[#abcfe7]/90 text-[#3F3F3F] shadow-sm rounded-[4px]"
+                                title="导出为 .drawio 文件"
                             >
-                                <Download className="h-3 w-3 mr-1" />
-                                <span className="text-xs" style={{ fontSize: '14px' }}>导出</span>
+                                <Download className="h-3.5 w-3.5" />
                             </Button>
-                            {layoutNotice && (
-                                <span className="ml-auto rounded-md bg-black/80 px-3 py-1 text-xs text-white shadow">
-                                    {layoutNotice}
-                                </span>
-                            )}
+                        </div>
+                    )}
+
+                    {/* Layout / restyle feedback — transient toast (auto-clears
+                        after 6s), placed over the canvas so it covers neither
+                        draw.io's toolbar row above nor its shape panel to the
+                        left. */}
+                    {layoutNotice && (
+                        <div className="absolute top-11 left-60 z-20 rounded-md bg-black/80 px-3 py-1 text-xs text-white shadow animate-in fade-in duration-300">
+                            {layoutNotice}
                         </div>
                     )}
                     
