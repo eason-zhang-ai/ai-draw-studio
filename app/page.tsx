@@ -4,9 +4,25 @@ import { DrawIoEmbed } from "react-drawio";
 import { CollapsibleChatPanel } from "@/components/collapsible-chat-panel";
 import { useDiagram } from "@/contexts/diagram-context";
 import { Button } from "@/components/ui/button";
-import { Upload, Download, LayoutGrid } from "lucide-react";
+import { Upload, Download, LayoutGrid, Undo2 } from "lucide-react";
 import { extractDiagramXML } from "@/lib/utils";
 import { xmlToGraph } from "@/lib/xml-graph";
+
+/**
+ * Style presets, in dropdown order. Kept in one place so the option labels and
+ * the undo tooltip ("撤销「样式：暗色」") cannot drift apart.
+ */
+const STYLE_PRESETS: { value: string; label: string }[] = [
+    { value: "default", label: "默认" },
+    { value: "corporate", label: "企业风" },
+    { value: "handdrawn", label: "手绘风" },
+    { value: "colorblind-safe", label: "色盲安全" },
+    { value: "dark", label: "暗色" },
+];
+
+const STYLE_PRESET_LABELS: Record<string, string> = Object.fromEntries(
+    STYLE_PRESETS.map((p) => [p.value, p.label])
+);
 
 /**
  * draw.io reports canvas XML either raw or URL-encoded depending on the event;
@@ -28,13 +44,14 @@ function normalizeDrawioXml(raw: unknown): string | null {
 }
 
 export default function Home() {
-    const { drawioRef, handleDiagramExport, importDiagramFile, exportDiagramFile, chartXML, exportPurpose, exportXml, loadDiagram, syncCanvasXml } = useDiagram();
+    const { drawioRef, handleDiagramExport, importDiagramFile, exportDiagramFile, chartXML, exportPurpose, exportXml, loadDiagram, syncCanvasXml, transformCanvas, undoCanvasTransform, undoDepth, undoLabel, canvasEpoch } = useDiagram();
     const [isMobile, setIsMobile] = useState(false);
     const [isChatCollapsed, setIsChatCollapsed] = useState(false);
     const [isDrawIoLoaded, setIsDrawIoLoaded] = useState(false);
     const [layoutBusy, setLayoutBusy] = useState(false);
     const [layoutNotice, setLayoutNotice] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const undoButtonRef = useRef<HTMLButtonElement>(null);
     // Style presets are a "switch", not a stack: every preset is remapped
     // from the ORIGINAL (pre-restyle) diagram so switching dark -> corporate
     // is a clean corporate, not corporate-over-dark. Snapshot the base on the
@@ -42,9 +59,17 @@ export default function Home() {
     const styleBaseXmlRef = useRef<string | null>(null);
 
     useEffect(() => {
-        // New diagram generated/imported -> drop the stale style base.
+        // A diagram arrived from OUTSIDE (AI generation, file import, history
+        // restore) -> drop the stale style base.
+        //
+        // Keyed on canvasEpoch rather than chartXML on purpose: chartXML also
+        // changes for our own layout/style pushes, so the old chartXML-based
+        // effect cleared the base immediately after applying a preset. The next
+        // preset then re-snapshotted the ALREADY-restyled diagram, making
+        // presets compound (dark then corporate gave corporate-over-dark)
+        // instead of every preset remapping from the original.
         styleBaseXmlRef.current = null;
-    }, [chartXML]);
+    }, [canvasEpoch]);
 
     const runAutoLayout = async () => {
         if (layoutBusy) return;
@@ -68,7 +93,9 @@ export default function Home() {
             });
             const data = await res.json();
             if (res.ok && data.xml) {
-                loadDiagram(data.xml);
+                // `xml` is exactly what the canvas held before the transform,
+                // so it doubles as the undo snapshot.
+                transformCanvas(data.xml, xml, "自动布局");
                 setLayoutNotice(
                     `✅ 自动布局完成：${graph.nodes.length} 节点 / ${graph.edges.length} 连线`
                 );
@@ -94,9 +121,14 @@ export default function Home() {
             if (!styleBaseXmlRef.current) {
                 styleBaseXmlRef.current = await exportXml();
             }
+            const presetLabel = STYLE_PRESET_LABELS[preset] ?? preset;
             // "默认" = restore the original, no remap needed.
             if (preset === "default") {
-                loadDiagram(styleBaseXmlRef.current);
+                transformCanvas(
+                    styleBaseXmlRef.current,
+                    await exportXml(),
+                    "样式：默认"
+                );
                 setLayoutNotice("✅ 已恢复默认样式（原始配色）");
                 return;
             }
@@ -110,8 +142,8 @@ export default function Home() {
             });
             const data = await res.json();
             if (res.ok && data.xml) {
-                loadDiagram(data.xml);
-                setLayoutNotice(`✅ 已应用「${preset}」样式（布局不变）`);
+                transformCanvas(data.xml, await exportXml(), `样式：${presetLabel}`);
+                setLayoutNotice(`✅ 已应用「${presetLabel}」样式（布局不变）`);
             } else {
                 setLayoutNotice(`样式应用失败：${data?.error || res.status}`);
             }
@@ -124,6 +156,56 @@ export default function Home() {
             setTimeout(() => setLayoutNotice(null), 6000);
         }
     };
+
+    const undoTranform = () => {
+        const label = undoCanvasTransform();
+        setLayoutNotice(label ? `↩️ 已撤销「${label}」` : "没有可撤销的操作");
+        setTimeout(() => setLayoutNotice(null), 6000);
+    };
+
+    useEffect(() => {
+        // Right after pressing one of our transform buttons the focus is still
+        // on THIS document, so Ctrl+Z lands here. Once the user clicks into the
+        // canvas the iframe holds focus instead and draw.io's own undo handles
+        // the shortcut — which is the correct split, because our transforms
+        // never enter draw.io's history in the first place.
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (
+                (event.metaKey || event.ctrlKey) &&
+                !event.shiftKey &&
+                event.key.toLowerCase() === "z" &&
+                undoDepth > 0
+            ) {
+                event.preventDefault();
+                undoTranform();
+            }
+        };
+        window.addEventListener("keydown", onKeyDown);
+        return () => window.removeEventListener("keydown", onKeyDown);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [undoDepth, undoCanvasTransform]);
+
+    // draw.io focuses its own canvas whenever we push XML into it, which would
+    // route Ctrl+Z to the iframe — where our transform has no history entry at
+    // all. Hand focus back to the undo button so the reflex works; clicking the
+    // canvas resumes normal editing.
+    const undoTrackingRef = useRef(0);
+    useEffect(() => {
+        if (undoDepth <= undoTrackingRef.current) {
+            undoTrackingRef.current = undoDepth;
+            return;
+        }
+        undoTrackingRef.current = undoDepth;
+        const focusUndo = () =>
+            undoButtonRef.current?.focus({ preventScroll: true });
+        focusUndo();
+        // draw.io's own focus grab lands a beat after the postMessage round-trip,
+        // so re-assert once if it won the race.
+        const timer = setTimeout(() => {
+            if (document.activeElement !== undoButtonRef.current) focusUndo();
+        }, 500);
+        return () => clearTimeout(timer);
+    }, [undoDepth]);
 
     useEffect(() => {
         const checkMobile = () => {
@@ -277,12 +359,27 @@ export default function Home() {
                                 <option value="" disabled>
                                     样式
                                 </option>
-                                <option value="default">默认</option>
-                                <option value="corporate">企业风</option>
-                                <option value="handdrawn">手绘风</option>
-                                <option value="colorblind-safe">色盲安全</option>
-                                <option value="dark">暗色</option>
+                                {STYLE_PRESETS.map((p) => (
+                                    <option key={p.value} value={p.value}>
+                                        {p.label}
+                                    </option>
+                                ))}
                             </select>
+                            <Button
+                                ref={undoButtonRef}
+                                onClick={undoTranform}
+                                variant="secondary"
+                                size="icon"
+                                disabled={layoutBusy || undoDepth === 0}
+                                className="size-7 bg-[#c2e7ff] hover:bg-[#abcfe7]/90 text-[#3F3F3F] shadow-sm rounded-[4px] disabled:opacity-40"
+                                title={
+                                    undoDepth > 0
+                                        ? `撤销「${undoLabel}」（可撤销 ${undoDepth} 步）`
+                                        : "没有可撤销的操作"
+                                }
+                            >
+                                <Undo2 className="h-3.5 w-3.5" />
+                            </Button>
                             <Button
                                 onClick={runAutoLayout}
                                 variant="secondary"

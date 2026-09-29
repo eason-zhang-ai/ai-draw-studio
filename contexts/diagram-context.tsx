@@ -29,9 +29,37 @@ interface DiagramContextType {
      * stored copy in step with manual edits.
      */
     syncCanvasXml: (xml: string) => void;
+    /**
+     * Replace the canvas from one of this page's own transform buttons
+     * (Graphviz auto-layout, style presets) while keeping an app-level undo
+     * entry.
+     *
+     * draw.io's own undo cannot cover these: the embed's `load` action resets
+     * the document and its history, and `merge` — the only other
+     * content-replacing action react-drawio exposes — creates no history entry
+     * either. Both measured against the live embed: right after `load` the
+     * toolbar's undo button is disabled, while a real mouse edit enables it and
+     * Ctrl+Z works. So the previous diagram is snapshotted on our side.
+     */
+    transformCanvas: (xml: string, previousXml: string, label: string) => void;
+    /** Undo the most recent transformCanvas. Returns its label, or null. */
+    undoCanvasTransform: () => string | null;
+    /** How many transforms can still be undone. */
+    undoDepth: number;
+    /** Label of the transform that undoCanvasTransform would undo. */
+    undoLabel: string | null;
+    /**
+     * Bumped whenever a diagram arrives from outside (AI generation, file
+     * import, history restore, mount restore). Lets callers drop state that
+     * described the previous canvas — e.g. the style-preset base.
+     */
+    canvasEpoch: number;
 }
 
 const DiagramContext = createContext<DiagramContextType | undefined>(undefined);
+
+/** How many whole-canvas transforms stay undoable. */
+const UNDO_LIMIT = 20;
 
 /**
  * Count the draw.io cells rendered inside an exported `xmlsvg` data URL.
@@ -147,7 +175,27 @@ export function DiagramProvider({ children }: { children: React.ReactNode }) {
         }
     };
 
-    const loadDiagram = (chart: string) => {
+    // ---- App-level undo for whole-canvas transforms ------------------------
+    //
+    // Auto-layout and the style presets both replace the entire diagram, and
+    // draw.io's own undo cannot cover that (see transformCanvas in the context
+    // type for the measurements). So the pre-transform diagram is snapshotted
+    // here. The stack is dropped whenever a diagram arrives from outside, and
+    // a non-transform load also bumps canvasEpoch so consumers can drop state
+    // that described the replaced canvas.
+    const undoStackRef = useRef<{ xml: string; label: string }[]>([]);
+    const [undoDepth, setUndoDepth] = useState(0);
+    const [undoLabel, setUndoLabel] = useState<string | null>(null);
+    const [canvasEpoch, setCanvasEpoch] = useState(0);
+
+    const syncUndoState = () => {
+        const stack = undoStackRef.current;
+        setUndoDepth(stack.length);
+        setUndoLabel(stack.length ? stack[stack.length - 1].label : null);
+    };
+
+    /** Push XML into the iframe, leaving the undo stack alone. */
+    const pushCanvas = (chart: string) => {
         if (drawioRef.current) {
             drawioRef.current.load({
                 xml: chart,
@@ -162,6 +210,31 @@ export function DiagramProvider({ children }: { children: React.ReactNode }) {
         if (chart) {
             setChartXML(chart);
         }
+    };
+
+    const loadDiagram = (chart: string) => {
+        undoStackRef.current = [];
+        syncUndoState();
+        setCanvasEpoch((epoch) => epoch + 1);
+        pushCanvas(chart);
+    };
+
+    const transformCanvas = (xml: string, previousXml: string, label: string) => {
+        if (previousXml && previousXml !== xml) {
+            const stack = undoStackRef.current;
+            stack.push({ xml: previousXml, label });
+            if (stack.length > UNDO_LIMIT) stack.shift();
+            syncUndoState();
+        }
+        pushCanvas(xml);
+    };
+
+    const undoCanvasTransform = () => {
+        const entry = undoStackRef.current.pop();
+        syncUndoState();
+        if (!entry) return null;
+        pushCanvas(entry.xml);
+        return entry.label;
     };
 
     const handleDiagramExport = (data: any) => {
@@ -276,6 +349,11 @@ export function DiagramProvider({ children }: { children: React.ReactNode }) {
                 exportPng,
                 exportXml,
                 syncCanvasXml,
+                transformCanvas,
+                undoCanvasTransform,
+                undoDepth,
+                undoLabel,
+                canvasEpoch,
             }}
         >
             {children}

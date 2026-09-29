@@ -34,6 +34,7 @@ An intelligent diagramming application built with Next.js that harnesses the pow
 - **Model Configuration**: Customize AI models directly from the browser
 - **Mermaid Smart Enhancements**: one-click "Fit mobile / Improve readability / Architecture review" quick actions with structure-first refinement and review protocols
 - **Code / Config Import**: Upload SQL DDL, Terraform, OpenAPI (JSON/YAML), Python or JS/TS files and let the deterministic `drawio-skill` importers build the diagram directly (no model tokens spent). **Files of the same kind selected together merge into a single diagram**, so cross-file module dependencies and table foreign keys actually show up
+- **Draw.IO Canvas Tools**: one-click Graphviz auto-layout, five style presets (default / corporate / handdrawn / colorblind-safe / dark), and `.drawio` import/export. All of them float on draw.io's own toolbar so they **cost no canvas height**; presets always remap from the original diagram, so switching between them never compounds; and both auto-layout and restyle are **undoable** (toolbar ↩ button, or Ctrl+Z right after a transform)
 
 ## 🎯 Supported Diagram Types
 
