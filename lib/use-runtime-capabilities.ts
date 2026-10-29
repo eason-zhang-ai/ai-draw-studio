@@ -12,6 +12,7 @@ const NONE: RuntimeCapabilities = {
     stylePresets: false,
     c4: false,
     fileImport: false,
+    drawioEmbedBase: "https://embed.diagrams.net",
 };
 
 /**

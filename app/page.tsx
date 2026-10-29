@@ -8,6 +8,7 @@ import { Upload, Download, LayoutGrid, Undo2, Info } from "lucide-react";
 import { extractDiagramXML } from "@/lib/utils";
 import { xmlToGraph } from "@/lib/xml-graph";
 import { useRuntimeCapabilities } from "@/lib/use-runtime-capabilities";
+import { DEFAULT_DRAWIO_EMBED_BASE } from "@/lib/drawio-embed";
 
 /**
  * Style presets, in dropdown order. Kept in one place so the option labels and
@@ -49,6 +50,9 @@ export default function Home() {
     const [isMobile, setIsMobile] = useState(false);
     const [isChatCollapsed, setIsChatCollapsed] = useState(false);
     const [isDrawIoLoaded, setIsDrawIoLoaded] = useState(false);
+    // Set when the editor iframe never reports ready. Cross-origin iframes
+    // expose no error event, so a timeout is the only signal available.
+    const [drawioLoadFailed, setDrawioLoadFailed] = useState(false);
     const [layoutBusy, setLayoutBusy] = useState(false);
     const [layoutNotice, setLayoutNotice] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -66,7 +70,6 @@ export default function Home() {
     useEffect(() => {
         // A diagram arrived from OUTSIDE (AI generation, file import, history
         // restore) -> drop the stale style base.
-        //
         // Keyed on canvasEpoch rather than chartXML on purpose: chartXML also
         // changes for our own layout/style pushes, so the old chartXML-based
         // effect cleared the base immediately after applying a preset. The next
@@ -75,6 +78,19 @@ export default function Home() {
         // instead of every preset remapping from the original.
         styleBaseXmlRef.current = null;
     }, [canvasEpoch]);
+
+    useEffect(() => {
+        // The editor is a cross-origin iframe: a failed load raises no error
+        // event here, the ready callback simply never fires. Treat that as a
+        // failure after a grace period so the canvas explains itself instead of
+        // staying blank.
+        if (isDrawIoLoaded) {
+            setDrawioLoadFailed(false);
+            return;
+        }
+        const timer = setTimeout(() => setDrawioLoadFailed(true), 12000);
+        return () => clearTimeout(timer);
+    }, [isDrawIoLoaded]);
 
     const runAutoLayout = async () => {
         if (layoutBusy) return;
@@ -452,6 +468,7 @@ export default function Home() {
                         <DrawIoEmbed
                             ref={drawioRef}
                             autosave
+                            baseUrl={caps?.drawioEmbedBase}
                             onAutoSave={handleDrawioAutoSave}
                             onLoad={handleDrawioLoad}
                             onExport={handleDrawioExport}
@@ -465,6 +482,47 @@ export default function Home() {
                                 grid: true,
                             }}
                         />
+                        {/* The editor is a cross-origin iframe, so a failed load
+                            cannot be observed from here — it simply never reports
+                            ready. Say so instead of leaving a blank canvas: the
+                            usual cause is the embed host being unreachable or
+                            blocked on the current network. */}
+                        {drawioLoadFailed && (
+                            <div className="absolute inset-0 z-20 flex items-center justify-center bg-gray-100/95 p-6">
+                                <div className="max-w-md space-y-2 text-sm text-gray-700">
+                                    <div className="text-base font-semibold text-gray-900">
+                                        draw.io 编辑器加载失败
+                                    </div>
+                                    <p>
+                                        画布来自第三方站点，本机未能加载：
+                                        <code className="mx-1 rounded bg-gray-200 px-1 py-0.5 text-xs">
+                                            {caps?.drawioEmbedBase ?? DEFAULT_DRAWIO_EMBED_BASE}
+                                        </code>
+                                    </p>
+                                    <ul className="list-disc space-y-1 pl-5">
+                                        <li>在同一个浏览器里直接打开该地址，确认能否访问</li>
+                                        <li>
+                                            若直接打开也失败（例如 403），说明该域名在当前网络 / 浏览器下被拦截
+                                        </li>
+                                        <li>
+                                            可自建 draw.io 并设置环境变量{" "}
+                                            <code className="rounded bg-gray-200 px-1 py-0.5 text-xs">
+                                                AI_DRAWIO_EMBED_BASE
+                                            </code>{" "}
+                                            指向它
+                                        </li>
+                                        <li>其余功能（对话、Mermaid / PlantUML / Excalidraw 等模式）不受影响</li>
+                                    </ul>
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        onClick={() => window.location.reload()}
+                                    >
+                                        重新加载页面
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

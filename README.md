@@ -483,6 +483,36 @@ skills/               # vendor 的 Agents365-ai 图表 skill 家族（MIT）
 
 如需完全离线渲染全部类型，可在 `docker-compose.yaml` 中自建 Kroki 服务并把 `KROKI_RENDER_BASE` 指向它。
 
+### Q5：draw.io 画布一直空白 / 控制台报 `embed.diagrams.net … 403 (Forbidden)` 怎么办？
+
+**先明确一点：这个请求不经过本项目的服务器。** draw.io 编辑器是浏览器直连 `embed.diagrams.net` 的跨域 iframe，403 由那个第三方站点（Cloudflare）返回，与本项目的接口、鉴权、环境变量都无关。
+
+典型判别：
+
+| 现象 | 说明 |
+| --- | --- |
+| 浏览器里**直接打开** `https://embed.diagrams.net/?embed=1` 也是 403 | 该域名在当前网络 / 浏览器下被拦 → 用下面的自建方案 |
+| 直接打开正常，**只有嵌在应用里**才 403 | Cloudflare 针对跨站 iframe 上下文的判定（第三方 Cookie 分区、Referer、客户端特征等）→ 同样建议自建 |
+| 直接打开和嵌入都正常 | 与本项目无关的临时抖动，刷新即可 |
+
+已知会影响判定的一个因素：**无头 / 自动化浏览器特征**。实测同一个 URL，`sec-ch-ua` 带 `HeadlessChrome` 标记时返回 403，换成普通 `Google Chrome` 标记则返回 200；且与出口 IP 无关（同机 curl 恒为 200）。
+
+出现该错误时，画布区域会直接显示失败原因与处理建议，而不是留一片空白。
+
+**自建 draw.io 并指过来**：
+
+```bash
+docker run -d --name drawio -p 8080:8080 jgraph/drawio
+```
+
+然后在环境中设置（Docker 部署走 `.env` / 1Panel，Vercel 走项目环境变量）：
+
+```bash
+AI_DRAWIO_EMBED_BASE="http://your-host:8080"
+```
+
+重启容器后生效。此后面板不再依赖任何第三方域名；`AI_DRAWIO_EMBED_BASE` 留空则使用公网默认值。
+
 ## ✅ 待办事项
 
 - [x] 允许 LLM 修改 XML 而不是每次都从头生成

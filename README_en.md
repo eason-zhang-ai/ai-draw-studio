@@ -485,6 +485,36 @@ The public `kroki.io` instance is frequently overloaded and its render endpoints
 
 To render all types fully offline, add a self-hosted Kroki service to `docker-compose.yaml` and point `KROKI_RENDER_BASE` at it.
 
+### Q5: The draw.io canvas stays blank and the console shows `embed.diagrams.net … 403 (Forbidden)`. What now?
+
+**First, this request never reaches this project's server.** The draw.io editor is a cross-origin iframe the browser loads straight from `embed.diagrams.net`; the 403 comes from that third party (Cloudflare) and has nothing to do with this project's routes, auth or environment variables.
+
+How to tell the cases apart:
+
+| What you see | What it means |
+| --- | --- |
+| Opening `https://embed.diagrams.net/?embed=1` **directly** also gives 403 | The domain is blocked on this network / browser → use the self-hosted option below |
+| It works directly, but 403 only **when embedded** | Cloudflare judging the cross-site-iframe context (third-party cookie partitioning, Referer, client hints) → self-hosting is still the fix |
+| Both work | Transient flakiness unrelated to this project; reload |
+
+One factor known to affect the verdict: **headless / automation browser fingerprints**. Measured on the same URL, a `sec-ch-ua` client hint containing `HeadlessChrome` returns 403 while plain `Google Chrome` returns 200 — and the egress IP is not the cause (curl from the same host always gets 200).
+
+When this happens the canvas now shows the reason and what to do instead of staying blank.
+
+**Self-host draw.io and point at it:**
+
+```bash
+docker run -d --name drawio -p 8080:8080 jgraph/drawio
+```
+
+Then set, in your environment (`.env` / 1Panel for the Docker deploy, project environment variables for Vercel):
+
+```bash
+AI_DRAWIO_EMBED_BASE="http://your-host:8080"
+```
+
+Restart the container to apply. The editor no longer depends on any third-party domain; leaving `AI_DRAWIO_EMBED_BASE` empty keeps the public default.
+
 ## ✅ TODOs
 
 - [x] Allow the LLM to modify the XML instead of generating it from scratch everytime.

@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { DEFAULT_DRAWIO_EMBED_BASE } from "@/lib/drawio-embed";
 
 const execFileAsync = promisify(execFile);
 
@@ -30,7 +31,17 @@ export interface RuntimeCapabilities {
     c4: boolean;
     /** Code/config file import (SQL/Terraform/OpenAPI/Python/JS). */
     fileImport: boolean;
+    /**
+     * Base URL the drawio editor iframe loads from.
+     *
+     * Defaults to the public embed.diagrams.net. Override with
+     * AI_DRAWIO_EMBED_BASE when that host is unreachable or blocked on your
+     * network — point it at a self-hosted drawio (`jgraph/drawio` image) and the
+     * canvas stops depending on a third party entirely.
+     */
+    drawioEmbedBase: string;
 }
+
 
 async function hasBinary(command: string, args: string[]): Promise<boolean> {
     try {
@@ -67,6 +78,11 @@ export function getRuntimeCapabilities(): Promise<RuntimeCapabilities> {
             // c4.py builds its XML through autolayout.py.
             c4: python3 && dot,
             fileImport: python3 && dot,
+            // Not a probe: a plain config value, read once here so the client
+            // gets it through the same round-trip as the flags.
+            drawioEmbedBase:
+                process.env.AI_DRAWIO_EMBED_BASE?.trim() ||
+                DEFAULT_DRAWIO_EMBED_BASE,
         };
     })();
     return cached;

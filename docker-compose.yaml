@@ -16,4 +16,5 @@ services:
       AI_MODEL_SUPPORTS_VISION: ${AI_MODEL_SUPPORTS_VISION}  # true/false
       AI_CONTEXT_LENGTH: ${AI_CONTEXT_LENGTH}  # input token budget, unset = model default
       AI_SKILL_CONTEXT: ${AI_SKILL_CONTEXT}  # compact (default) | full
+      AI_DRAWIO_EMBED_BASE: ${AI_DRAWIO_EMBED_BASE}  # unset = https://embed.diagrams.net
     restart: unless-stopped
